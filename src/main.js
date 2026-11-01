@@ -1,7 +1,25 @@
 import './styles.css';
-import examsData from './data/exams.json';
 
-const STORAGE_KEY = 'jlpt_n3_daily_state_v1';
+const LEVEL_STORAGE_KEY = 'jlpt_selected_level';
+const STATE_KEYS = {
+  N3: 'jlpt_n3_daily_state_v1',
+  N4: 'jlpt_n4_daily_state_v1'
+};
+
+// Detect initial level from ?level=n4 / ?level=n3 URL parameter or saved preference
+function detectInitialLevel() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const qLvl = (params.get('level') || '').toUpperCase();
+    if (qLvl === 'N3' || qLvl === 'N4') {
+      localStorage.setItem(LEVEL_STORAGE_KEY, qLvl);
+      return qLvl;
+    }
+    const saved = (localStorage.getItem(LEVEL_STORAGE_KEY) || '').toUpperCase();
+    if (saved === 'N3' || saved === 'N4') return saved;
+  } catch {}
+  return 'N3';
+}
 
 // Register Service Worker for offline PWA support on GrapheneOS
 if ('serviceWorker' in navigator) {
@@ -10,10 +28,10 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Load or initialize persistent state
-function loadState() {
+// Load or initialize persistent state for a given level
+function loadStateForLevel(level) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STATE_KEYS[level] || STATE_KEYS.N3);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && parsed.days) {
@@ -26,8 +44,13 @@ function loadState() {
   return { days: {} };
 }
 
+const initialLevel = detectInitialLevel();
+
 const appState = {
-  store: loadState(),
+  level: initialLevel, // 'N3' | 'N4'
+  examsByLevel: {}, // { N3: [...], N4: [...] }
+  loadingExams: true,
+  store: loadStateForLevel(initialLevel),
   activeTab: 'daily', // 'daily' | 'progress' | 'exam'
   currentExamDay: null, // 1..34
   timerPaused: false,
@@ -35,13 +58,42 @@ const appState = {
   showJumpDrawer: false,
   openTranscripts: {}, // { [qNum]: boolean }
   playingQuestion: null, // qNum
-  activeWordPopup: null, // { surface, base, reading, meaning, level, pos, hideReading, revealedReading, optionContext }
+  activeWordPopup: null,
   showBackupModal: false
 };
 
+function getCurrentExams() {
+  return appState.examsByLevel[appState.level] || [];
+}
+
+function getPassMark() {
+  return appState.level === 'N4' ? 90 : 95;
+}
+
+async function ensureExamsLoaded(level) {
+  if (appState.examsByLevel[level]) {
+    appState.loadingExams = false;
+    return;
+  }
+  appState.loadingExams = true;
+  renderApp();
+  try {
+    const file = level === 'N4' ? './data/exams-n4.json' : './data/exams-n3.json';
+    const res = await fetch(file);
+    const data = await res.json();
+    appState.examsByLevel[level] = data;
+  } catch (e) {
+    console.error('Failed to load exams for', level, e);
+    appState.examsByLevel[level] = [];
+  }
+  appState.loadingExams = false;
+  renderApp();
+}
+
 function saveStore() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appState.store));
+    const key = STATE_KEYS[appState.level] || STATE_KEYS.N3;
+    localStorage.setItem(key, JSON.stringify(appState.store));
   } catch (e) {
     console.warn('Failed to save state:', e);
   }
@@ -50,9 +102,9 @@ function saveStore() {
 function getDayState(dayNum) {
   if (!appState.store.days[dayNum]) {
     appState.store.days[dayNum] = {
-      status: 'not_started', // 'not_started' | 'in_progress' | 'completed'
-      answers: {}, // { [qNum]: 0..3 }
-      starSlots: {}, // { [qNum]: [optIdx, ...] }
+      status: 'not_started',
+      answers: {},
+      starSlots: {},
       remainingSeconds: 3600,
       lastQuestion: 1,
       score: null,
@@ -62,16 +114,13 @@ function getDayState(dayNum) {
   return appState.store.days[dayNum];
 }
 
-// Calculate official-style JLPT N3 scaled score (/180)
+// Calculate official-style JLPT N3 / N4 scaled score (/180)
 function computeExamScore(exam, answers) {
-  // Section 1: 言語知識 (Vocab Q1..15 + Grammar Q16..25 = 25 Qs) -> 60 pts
   let langRaw = 0;
   let langTotal = 0;
-  // Section 2: 読解 (Q26..33 = 8 Qs weighted to 60 pts)
   let readWeighted = 0;
   let readRaw = 0;
   let readTotal = 0;
-  // Section 3: 聴解 (Q34..40 = 7 Qs) -> 60 pts
   let listenRaw = 0;
   let listenTotal = 0;
 
@@ -100,7 +149,13 @@ function computeExamScore(exam, answers) {
   const readScore = Math.min(60, Math.round(readWeighted));
   const listenScore = Math.round((listenRaw / Math.max(1, listenTotal)) * 60);
   const totalScore = langScore + readScore + listenScore;
-  const passed = totalScore >= 95 && langScore >= 19 && readScore >= 19 && listenScore >= 19;
+
+  // N4 official pass rule: Total >= 90/180, Combined (Language + Reading) >= 38/120, Listening >= 19/60
+  // N3 official pass rule: Total >= 95/180, and each of the 3 sections >= 19/60
+  const passed =
+    appState.level === 'N4'
+      ? totalScore >= 90 && langScore + readScore >= 38 && listenScore >= 19
+      : totalScore >= 95 && langScore >= 19 && readScore >= 19 && listenScore >= 19;
 
   return {
     langScore,
@@ -191,6 +246,8 @@ function renderClickableJapanese(text) {
 
 // Determine which day is the "Recommended / Current Day"
 function getRecommendedDayNum() {
+  const examsData = getCurrentExams();
+  if (!examsData.length) return 1;
   // 1. Any day currently in_progress
   for (const exam of examsData) {
     const st = getDayState(exam.day);
@@ -395,6 +452,11 @@ async function togglePlayListeningQuestion(q) {
 
 // Render Screen 1: Daily Exam List (Nov 2 -> Dec 6)
 function renderDailyListScreen() {
+  const examsData = getCurrentExams();
+  if (appState.loadingExams || !examsData.length) {
+    return `<div class="hero-banner"><b>Loading JLPT ${appState.level} Daily Exam Papers...</b></div>`;
+  }
+  const passMark = getPassMark();
   const recDayNum = getRecommendedDayNum();
   const recExam = examsData.find(e => e.day === recDayNum) || examsData[0];
   const recState = getDayState(recExam.day);
@@ -417,11 +479,11 @@ function renderDailyListScreen() {
   let heroActionBtn = '';
   if (recState.status === 'in_progress') {
     heroActionBtn = `<button class="btn-primary btn-resume" data-action="open-exam" data-day="${recExam.day}">
-      ▶ Resume Day ${recExam.day} (Q${recState.lastQuestion || 1} · ${recAnsweredCount}/${recExam.totalQuestions} · ${formatTime(recState.remainingSeconds)} left)
+      ▶ Resume ${appState.level} Day ${recExam.day} (Q${recState.lastQuestion || 1} · ${recAnsweredCount}/${recExam.totalQuestions} · ${formatTime(recState.remainingSeconds)} left)
     </button>`;
   } else {
     heroActionBtn = `<button class="btn-primary" data-action="open-exam" data-day="${recExam.day}">
-      ▶ Start Day ${recExam.day} Paper (${recExam.labelEn} · 60 min)
+      ▶ Start ${appState.level} Day ${recExam.day} Paper (${recExam.labelEn} · 60 min)
     </button>`;
   }
 
@@ -448,7 +510,7 @@ function renderDailyListScreen() {
         const sc = st.score;
         badgeHtml = sc.passed
           ? `<span class="badge badge-pass">PASS 合格 · ${sc.totalScore} / 180</span>`
-          : `<span class="badge badge-fail">SCORE · ${sc.totalScore} / 180 (Need 95)</span>`;
+          : `<span class="badge badge-fail">SCORE · ${sc.totalScore} / 180 (Need ${passMark})</span>`;
         scoreSummaryHtml = `<span>言語知識 <b>${sc.langScore}/60</b> · 読解 <b>${sc.readScore}/60</b> · 聴解 <b>${sc.listenScore}/60</b></span>`;
         actionButtonsHtml = `
           <button class="btn-secondary" data-action="open-exam" data-day="${exam.day}">Review Paper</button>
@@ -462,7 +524,7 @@ function renderDailyListScreen() {
         }">
           <div class="day-left">
             <div class="day-num-box">
-              <span class="d-small">Day</span>
+              <span class="d-small">${appState.level} D</span>
               <span class="d-big">${exam.day}</span>
             </div>
             <div class="day-info">
@@ -493,19 +555,22 @@ function renderDailyListScreen() {
     <div class="hero-banner">
       <div class="hero-top">
         <div>
-          <span class="hero-eyebrow">NEXT UP · 1-HOUR SCALED N3 EXAM</span>
-          <h1 class="hero-title">Day ${recExam.day}: ${esc(recExam.labelEn)}（${esc(recExam.labelJa)}）</h1>
+          <span class="hero-eyebrow">NEXT UP · 1-HOUR SCALED JLPT ${appState.level} EXAM</span>
+          <h1 class="hero-title">${appState.level} Day ${recExam.day}: ${esc(recExam.labelEn)}（${esc(recExam.labelJa)}）</h1>
           <p class="hero-desc">
-            Start and stop whenever you want (morning, lunch, evening). Tap any Japanese word in any question or reading passage for instant English + <b>jpdb.io</b> lookup.
+            Start and stop whenever you want (morning, lunch, evening). Timer auto-pauses when you leave the tab. Tap any Japanese word to open it in <b>jpdb.io</b>.
           </p>
         </div>
-        <div>
+        <div style="display:flex; flex-direction:column; gap:0.45rem; align-items:flex-end;">
           ${heroActionBtn}
+          <button class="btn-secondary" style="font-size:0.75rem; padding:0.3rem 0.65rem;" data-action="share-level-link">
+            🔗 Copy Direct ${appState.level === 'N3' ? 'N4 (Friend)' : 'N3'} Link
+          </button>
         </div>
       </div>
       <div class="hero-stats">
         <div class="stat-pill">
-          <div class="stat-label">DAYS COMPLETED</div>
+          <div class="stat-label">${appState.level} DAYS COMPLETED</div>
           <div class="stat-val">${completedCount} / 34 Days</div>
         </div>
         <div class="stat-pill">
@@ -513,7 +578,7 @@ function renderDailyListScreen() {
           <div class="stat-val">${avgScore !== null ? `${avgScore} / 180` : '— / 180'}</div>
         </div>
         <div class="stat-pill">
-          <div class="stat-label">PASS RATE (≥95/180)</div>
+          <div class="stat-label">PASS RATE (≥${passMark}/180)</div>
           <div class="stat-val">${completedCount > 0 ? `${passCount} / ${completedCount} Passed` : '—'}</div>
         </div>
         <div class="stat-pill">
@@ -532,22 +597,25 @@ function renderDailyListScreen() {
         <div style="font-size:0.75rem; font-weight:800; color:#fcd34d; letter-spacing:0.06em;">DAY 35 · TARGET EXAM DAY</div>
         <div style="font-size:1.2rem; font-weight:900; font-family:var(--font-serif);">Sunday, 6 December 2026（12月6日・日曜日）</div>
         <div style="font-size:0.84rem; color:#d4d4d8; margin-top:0.15rem;">
-          Official JLPT N3 Test Day · Pass Mark: 95 / 180 Total (and ≥ 19 / 60 in each section)
+          Official JLPT ${appState.level} Test Day · Pass Mark: ${passMark} / 180 Total
         </div>
       </div>
       <button class="btn-secondary" data-action="switch-tab" data-tab="progress">
-        📈 View Score Trend
+        📈 View ${appState.level} Score Trend
       </button>
     </div>
   `;
 }
 
-// Render Screen 2: Authentic JLPT N3 Exam Paper View
+// Render Screen 2: Authentic JLPT Exam Paper View
 function renderExamPaperScreen() {
+  const examsData = getCurrentExams();
+  if (!examsData.length) return '';
   const exam = examsData.find(e => e.day === appState.currentExamDay) || examsData[0];
   const st = getDayState(exam.day);
   const isCompleted = st.status === 'completed';
   const answeredCount = Object.keys(st.answers).length;
+  const passMark = getPassMark();
 
   // Group questions by Section & Mondai
   let lastSection = null;
@@ -899,10 +967,14 @@ function renderExamPaperScreen() {
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
           <div>
             <span class="badge ${sc.passed ? 'badge-pass' : 'badge-fail'}" style="font-size:0.82rem; padding:0.22rem 0.65rem;">
-              ${sc.passed ? '合格圏 (PASSED · ≥95/180 & All Sections ≥19)' : '不合格圏 (BELOW PASS THRESHOLD)'}
+              ${
+                sc.passed
+                  ? `合格圏 (PASSED · ≥${passMark}/180)`
+                  : `不合格圏 (BELOW ${passMark}/180 PASS THRESHOLD)`
+              }
             </span>
             <h2 style="margin:0.35rem 0 0; font-family:var(--font-serif); font-size:1.5rem;">
-              総合得点：${sc.totalScore} / 180 点
+              JLPT ${appState.level} 総合得点：${sc.totalScore} / 180 点
             </h2>
           </div>
           <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
@@ -943,7 +1015,7 @@ function renderExamPaperScreen() {
         <button class="btn-secondary" data-action="pause-and-exit" title="Save progress and return to Daily List">
           ← Save & Exit
         </button>
-        <span style="font-weight:800; font-size:0.88rem;">Day ${exam.day} (${esc(exam.labelJa)})</span>
+        <span style="font-weight:800; font-size:0.88rem;">${appState.level} · Day ${exam.day} (${esc(exam.labelJa)})</span>
       </div>
 
       <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
@@ -978,9 +1050,9 @@ function renderExamPaperScreen() {
     <div class="exam-booklet">
       <div class="booklet-cover-banner">
         <div class="b-series">2026年12月6日対策 · 1時間短縮実戦模試（第${exam.day}回 / 全34回）</div>
-        <div class="b-level">日本語能力試験 N3（${esc(exam.labelJa)}）</div>
+        <div class="b-level">日本語能力試験 ${appState.level}（${esc(exam.labelJa)}）</div>
         <div class="b-meta">
-          💡 <b>Tap any Japanese word</b> in the passages, questions, or choices to see its English meaning & open it in <b>jpdb.io</b>. Tap the numbered circle <b>(1–4)</b> to choose your answer.
+          💡 <b>Tap any Japanese word</b> in the passages, questions, or choices to open it directly in <b>jpdb.io</b>. Tap the numbered circle <b>(1–4)</b> to choose your answer.
         </div>
       </div>
 
@@ -1010,6 +1082,11 @@ function renderExamPaperScreen() {
 
 // Render Screen 3: Score Progress Tracker (Nov 2 -> Dec 6)
 function renderScoreProgressScreen() {
+  const examsData = getCurrentExams();
+  if (appState.loadingExams || !examsData.length) {
+    return `<div class="hero-banner"><b>Loading ${appState.level} Score Progress...</b></div>`;
+  }
+  const passMark = getPassMark();
   const completedExams = examsData
     .map(ex => ({ exam: ex, state: getDayState(ex.day) }))
     .filter(x => x.state.status === 'completed' && x.state.score);
@@ -1038,12 +1115,12 @@ function renderScoreProgressScreen() {
   const xForDay = day => padL + ((day - 1) / 33) * plotW;
   const yForScore = (score, maxVal = 180) => padT + plotH - (score / maxVal) * plotH;
 
-  // Grid lines for Total Score (0, 60, 95 Pass, 120, 180)
-  const yTicks = [0, 60, 95, 120, 180];
+  // Grid lines for Total Score (0, 60, PassMark, 120, 180)
+  const yTicks = [0, 60, passMark, 120, 180];
   const gridLinesHtml = yTicks
     .map(val => {
       const y = yForScore(val, 180);
-      const isPassLine = val === 95;
+      const isPassLine = val === passMark;
       return `
         <line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"
           stroke="${isPassLine ? '#15803d' : '#d6d3c9'}"
@@ -1134,7 +1211,7 @@ function renderScoreProgressScreen() {
 
   const historyRowsHtml =
     completedExams.length === 0
-      ? `<tr><td colspan="7" style="text-align:center; padding:1.25rem; color:var(--ink-muted);">No completed daily exams yet. Complete Day 1 to see your score plotted here!</td></tr>`
+      ? `<tr><td colspan="7" style="text-align:center; padding:1.25rem; color:var(--ink-muted);">No completed ${appState.level} daily exams yet. Complete Day 1 to see your score plotted here!</td></tr>`
       : completedExams
           .slice()
           .reverse()
@@ -1143,7 +1220,7 @@ function renderScoreProgressScreen() {
             const timeSpent = formatTime(3600 - (state.remainingSeconds || 0));
             return `
               <tr>
-                <td><b>Day ${exam.day}</b> (${esc(exam.labelJa)})</td>
+                <td><b>${appState.level} Day ${exam.day}</b> (${esc(exam.labelJa)})</td>
                 <td><b>${sc.totalScore} / 180</b></td>
                 <td>${sc.langScore} / 60</td>
                 <td>${sc.readScore} / 60</td>
@@ -1166,19 +1243,19 @@ function renderScoreProgressScreen() {
     <div class="hero-banner">
       <div class="hero-top">
         <div>
-          <span class="hero-eyebrow">SCORE TRAJECTORY · NOV 2 – DEC 6</span>
-          <h1 class="hero-title">JLPT N3 Daily Score Progress（成績推移）</h1>
+          <span class="hero-eyebrow">${appState.level} SCORE TRAJECTORY · NOV 2 – DEC 6</span>
+          <h1 class="hero-title">JLPT ${appState.level} Daily Score Progress（成績推移）</h1>
           <p class="hero-desc">
-            Track your scaled score out of 180 across all 34 daily papers leading up to the exam on Sunday, 6 December.
+            Track your ${appState.level} scaled score out of 180 across all 34 daily papers leading up to the exam on Sunday, 6 December.
           </p>
         </div>
         <div style="display:flex; gap:0.5rem;">
-          <button class="btn-secondary" data-action="toggle-backup-modal">💾 Backup / Restore Progress</button>
+          <button class="btn-secondary" data-action="toggle-backup-modal">💾 Backup / Restore ${appState.level}</button>
         </div>
       </div>
       <div class="hero-stats">
         <div class="stat-pill">
-          <div class="stat-label">COMPLETED PAPERS</div>
+          <div class="stat-label">${appState.level} COMPLETED</div>
           <div class="stat-val">${count} / 34</div>
         </div>
         <div class="stat-pill">
@@ -1197,8 +1274,8 @@ function renderScoreProgressScreen() {
     </div>
 
     <div class="chart-card">
-      <h2 class="chart-title">Total Scaled Score Over Time (0 – 180 Points)</h2>
-      <p class="chart-sub">Green dashed line = <b>95 / 180 Official JLPT N3 Overall Pass Threshold (合格ライン)</b></p>
+      <h2 class="chart-title">JLPT ${appState.level} Total Scaled Score Over Time (0 – 180 Points)</h2>
+      <p class="chart-sub">Green dashed line = <b>${passMark} / 180 Official JLPT ${appState.level} Overall Pass Threshold (合格ライン)</b></p>
       <div class="svg-chart-wrap">
         <svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:520px; display:block;">
           ${gridLinesHtml}
@@ -1219,7 +1296,7 @@ function renderScoreProgressScreen() {
         <span style="color:#1d4ed8; font-weight:800;">● 言語知識 (Vocab/Grammar)</span> &nbsp;·&nbsp;
         <span style="color:#b45309; font-weight:800;">● 読解 (Reading)</span> &nbsp;·&nbsp;
         <span style="color:#15803d; font-weight:800;">● 聴解 (Listening)</span> &nbsp;·&nbsp;
-        <span style="color:#b91c1c; font-weight:700;">--- 19 pt Minimum Sectional Pass Line</span>
+        <span style="color:#b91c1c; font-weight:700;">--- 19 pt Minimum Sectional Floor</span>
       </p>
       <div class="svg-chart-wrap">
         <svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:520px; display:block;">
@@ -1240,7 +1317,7 @@ function renderScoreProgressScreen() {
     </div>
 
     <div class="chart-card">
-      <h2 class="chart-title">Completed Daily Papers Log</h2>
+      <h2 class="chart-title">Completed ${appState.level} Daily Papers Log</h2>
       <div style="overflow-x:auto; margin-top:0.65rem;">
         <table class="history-table">
           <thead>
@@ -1263,69 +1340,6 @@ function renderScoreProgressScreen() {
   `;
 }
 
-// Render Bottom Word Lookup + jpdb.io Sheet
-function renderWordPopup() {
-  const p = appState.activeWordPopup;
-  if (!p) return '';
-
-  const jpdbBaseUrl = `https://jpdb.io/search?q=${encodeURIComponent(p.w || p.surface)}&lang=english#a`;
-  const jpdbSurfaceUrl = `https://jpdb.io/search?q=${encodeURIComponent(p.surface)}&lang=english#a`;
-  const showDualLinks = p.w && p.w !== p.surface;
-
-  let readingDisplay = `【${esc(p.r || p.surface)}】`;
-  if (p.hideReading && !p.revealedReading) {
-    readingDisplay = `<button class="btn-secondary" style="padding:0.12rem 0.5rem; font-size:0.74rem;" data-action="reveal-target-reading">👁 Show Reading (漢字読み Target)</button>`;
-  }
-
-  return `
-    <div class="word-popup-backdrop" data-action="close-word-popup"></div>
-    <div class="word-popup-sheet" role="dialog" aria-label="Word Lookup">
-      <div class="word-popup-inner">
-        <div class="word-popup-top">
-          <div class="word-head-group">
-            <span class="word-kanji">${esc(p.w || p.surface)}</span>
-            ${
-              showDualLinks
-                ? `<span style="font-size:0.82rem; color:#a1a1aa;">(in text: ${esc(p.surface)})</span>`
-                : ''
-            }
-            <span class="word-reading">${readingDisplay}</span>
-            ${p.l ? `<span class="word-level-tag">${esc(p.l)}</span>` : ''}
-            ${p.p ? `<span class="word-level-tag" style="color:#d4d4d8;">${esc(p.p)}</span>` : ''}
-          </div>
-          <button class="word-close-btn" data-action="close-word-popup">Close ✕</button>
-        </div>
-
-        <div class="word-meaning-text">
-          🇬🇧 <b>English:</b> ${esc(p.m)}
-        </div>
-
-        <div class="word-actions-row">
-          <a class="btn-jpdb" href="${jpdbBaseUrl}" target="_blank" rel="noopener noreferrer">
-            🔎 Open "${esc(p.w || p.surface)}" in jpdb.io ↗
-          </a>
-          ${
-            showDualLinks
-              ? `<a class="btn-jpdb secondary" href="${jpdbSurfaceUrl}" target="_blank" rel="noopener noreferrer">
-                  jpdb ("${esc(p.surface)}") ↗
-                </a>`
-              : ''
-          }
-          ${
-            p.optionContext
-              ? `<button class="btn-secondary" style="margin-left:auto;" data-action="select-option" data-qnum="${
-                  p.optionContext.qNum
-                }" data-optidx="${p.optionContext.optIdx}">
-                  ✓ Choose Option ${p.optionContext.optIdx + 1}
-                </button>`
-              : ''
-          }
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 // Render Backup / Restore Modal
 function renderBackupModal() {
   if (!appState.showBackupModal) return '';
@@ -1335,11 +1349,11 @@ function renderBackupModal() {
     <div class="word-popup-sheet" style="border-top-color:#15803d;">
       <div class="word-popup-inner">
         <div class="word-popup-top">
-          <b>💾 Backup or Restore Your Daily Progress</b>
+          <b>💾 Backup or Restore Your ${appState.level} Progress</b>
           <button class="word-close-btn" data-action="toggle-backup-modal">Close ✕</button>
         </div>
         <div style="font-size:0.82rem; color:#d4d4d8;">
-          Your answers and scores are saved automatically in this browser. Copy the backup code below if you want to move your progress to another phone/browser.
+          Your ${appState.level} answers and scores are saved automatically in this browser. Copy the backup code below if you want to move your progress to another phone/browser.
         </div>
         <textarea id="backup-code-box" rows="3" style="width:100%; font-family:monospace; font-size:0.76rem; padding:0.45rem; border-radius:4px;">${esc(
           code
@@ -1370,23 +1384,30 @@ function renderApp() {
   root.innerHTML = `
     <header class="app-header">
       <div class="header-inner">
-        <div class="brand-group" style="cursor:pointer;" data-action="switch-tab" data-tab="daily">
-          <span class="brand-badge">N3</span>
-          <div>
-            <div class="brand-title">JLPT N3 · 1-Hour Daily Exam</div>
-            <div class="brand-sub">Mon 2 Nov – Sun 6 Dec 2026 · Tap any word for English & jpdb.io</div>
+        <div class="brand-group">
+          <div class="level-switcher" role="group" aria-label="Select JLPT Level">
+            <button type="button" class="level-btn ${
+              appState.level === 'N3' ? 'active' : ''
+            }" data-action="switch-level" data-level="N3">N3</button>
+            <button type="button" class="level-btn ${
+              appState.level === 'N4' ? 'active' : ''
+            }" data-action="switch-level" data-level="N4">N4</button>
+          </div>
+          <div style="cursor:pointer;" data-action="switch-tab" data-tab="daily">
+            <div class="brand-title">JLPT ${appState.level} · 1-Hour Daily Exam</div>
+            <div class="brand-sub">Mon 2 Nov – Sun 6 Dec 2026 · Tap any word for jpdb.io</div>
           </div>
         </div>
         <nav class="nav-tabs">
           <button class="nav-tab ${
             appState.activeTab === 'daily' || appState.activeTab === 'exam' ? 'active' : ''
           }" data-action="switch-tab" data-tab="daily">
-            📅 Daily Papers (Nov 2–Dec 6)
+            📅 ${appState.level} Papers (Nov 2–Dec 6)
           </button>
           <button class="nav-tab ${
             appState.activeTab === 'progress' ? 'active' : ''
           }" data-action="switch-tab" data-tab="progress">
-            📈 Score Progress
+            📈 ${appState.level} Score Progress
           </button>
         </nav>
       </div>
@@ -1396,7 +1417,6 @@ function renderApp() {
       ${mainContent}
     </main>
 
-    ${renderWordPopup()}
     ${renderBackupModal()}
   `;
 }
@@ -1415,6 +1435,35 @@ document.addEventListener('click', event => {
   if (!actionEl) return;
 
   const action = actionEl.getAttribute('data-action');
+
+  if (action === 'switch-level') {
+    const newLevel = (actionEl.getAttribute('data-level') || 'N3').toUpperCase();
+    if (newLevel === appState.level) return;
+    stopExamTimer();
+    stopAllAudio();
+    appState.level = newLevel;
+    try {
+      localStorage.setItem(LEVEL_STORAGE_KEY, newLevel);
+      const url = new URL(window.location.href);
+      url.searchParams.set('level', newLevel.toLowerCase());
+      window.history.replaceState({}, '', url.toString());
+    } catch {}
+    appState.store = loadStateForLevel(newLevel);
+    appState.currentExamDay = null;
+    appState.activeTab = 'daily';
+    ensureExamsLoaded(newLevel);
+    return;
+  }
+
+  if (action === 'share-level-link') {
+    const targetLvl = appState.level === 'N3' ? 'n4' : 'n3';
+    const shareUrl = `${window.location.origin}${window.location.pathname}?level=${targetLvl}`;
+    navigator.clipboard?.writeText(shareUrl);
+    alert(
+      `Copied direct ${targetLvl.toUpperCase()} link to clipboard:\n${shareUrl}\n\nSend this to your friend—it will open directly on the ${targetLvl.toUpperCase()} exam papers with his own independent progress!`
+    );
+    return;
+  }
 
   if (action === 'switch-tab') {
     const tab = actionEl.getAttribute('data-tab');
@@ -1454,13 +1503,6 @@ document.addEventListener('click', event => {
     appState.activeWordPopup = null;
     appState.activeTab = 'daily';
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    renderApp();
-    return;
-  }
-
-  if (action === 'toggle-pause') {
-    appState.timerPaused = !appState.timerPaused;
-    saveStore();
     renderApp();
     return;
   }
@@ -1510,7 +1552,7 @@ document.addEventListener('click', event => {
     if (emptyIdx !== -1 && !slots.includes(optIdx)) {
       slots[emptyIdx] = optIdx;
       st.starSlots[qNum] = slots;
-      // If all 4 slots filled or star slot filled, auto-select the option in the star position!
+      const examsData = getCurrentExams();
       const exam = examsData.find(e => e.day === appState.currentExamDay);
       const qObj = exam?.questions.find(q => q.qNum === qNum);
       if (qObj && slots[qObj.starPosition - 1] !== null) {
@@ -1546,6 +1588,7 @@ document.addEventListener('click', event => {
 
   if (action === 'play-audio') {
     const qNum = Number(actionEl.getAttribute('data-qnum'));
+    const examsData = getCurrentExams();
     const exam = examsData.find(e => e.day === appState.currentExamDay);
     const q = exam?.questions.find(x => x.qNum === qNum);
     if (q) togglePlayListeningQuestion(q);
@@ -1561,12 +1604,13 @@ document.addEventListener('click', event => {
 
   if (action === 'grade-exam') {
     if (!appState.currentExamDay) return;
+    const examsData = getCurrentExams();
     const exam = examsData.find(e => e.day === appState.currentExamDay);
     const st = getDayState(exam.day);
     const answeredCount = Object.keys(st.answers).length;
     if (answeredCount < exam.totalQuestions) {
       const ok = window.confirm(
-        `You have answered ${answeredCount} of ${exam.totalQuestions} questions.\n\nIf you just want to take a break and continue later today, tap Cancel and use "Save & Exit".\n\nGrade Day ${exam.day} paper now?`
+        `You have answered ${answeredCount} of ${exam.totalQuestions} questions.\n\nIf you just want to take a break and continue later today, tap Cancel and use "Save & Exit".\n\nGrade ${appState.level} Day ${exam.day} paper now?`
       );
       if (!ok) return;
     }
@@ -1583,7 +1627,7 @@ document.addEventListener('click', event => {
 
   if (action === 'reset-day') {
     const dayNum = Number(actionEl.getAttribute('data-day'));
-    const ok = window.confirm(`Reset all answers and timer for Day ${dayNum}?`);
+    const ok = window.confirm(`Reset all answers and timer for ${appState.level} Day ${dayNum}?`);
     if (!ok) return;
     delete appState.store.days[dayNum];
     saveStore();
@@ -1628,5 +1672,5 @@ document.addEventListener('click', event => {
   }
 });
 
-// Initial Render
-renderApp();
+// Initial Load & Render
+ensureExamsLoaded(appState.level);

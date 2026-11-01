@@ -13,9 +13,22 @@ import {
 } from './banks/bank-special-drills.mjs';
 import { GRAMMAR_SENTENCE_QUESTIONS } from './banks/bank-grammar-sentences.mjs';
 
+import { N4_SHORT_PASSAGES } from './banks-n4/bank-n4-reading-short.mjs';
+import { N4_MEDIUM_PASSAGES, N4_LONG_PASSAGES } from './banks-n4/bank-n4-reading-medium-long.mjs';
+import { N4_INFO_RETRIEVAL_PASSAGES, N4_CLOZE_PASSAGES } from './banks-n4/bank-n4-info-and-cloze.mjs';
+import {
+  N4_SYNONYM_QUESTIONS,
+  N4_USAGE_QUESTIONS,
+  N4_GRAMMAR_SENTENCE_QUESTIONS,
+  N4_STAR_QUESTIONS,
+  N4_LISTENING_SETS
+} from './banks-n4/bank-n4-special-drills.mjs';
+
 const DATA_TMP = '/tmp/opencode/jlpt-data';
 const OUT_DIR = '/home/thickropes/jlpt-n3-prep/src/data';
+const PUBLIC_DATA_DIR = '/home/thickropes/jlpt-n3-prep/public/data';
 fs.mkdirSync(OUT_DIR, { recursive: true });
+fs.mkdirSync(PUBLIC_DATA_DIR, { recursive: true });
 
 // Helper: Katakana -> Hiragana
 function kataToHira(str = '') {
@@ -305,108 +318,118 @@ function makeKanjiDistractors(word) {
   return [...candidates].slice(0, 3);
 }
 
-// Filter clean multi-kanji N3 words with example sentences
-const kanjiCandidates = vocabN3.filter(
-  v =>
-    /^[\u4e00-\u9faf]{2,4}$/.test(v.word) &&
-    v.reading &&
-    v.reading.length >= 3 &&
-    Array.isArray(v.examples) &&
-    v.examples.some(ex => ex.ja.includes(v.word) && ex.ja.length >= 14 && ex.ja.length <= 52)
-);
+// Reusable Vocab Pool Builder (Mondai 1: 102 Qs, Mondai 2: 102 Qs, Mondai 3: 170 Qs)
+function generateVocabPools(vocabPoolList) {
+  const kCands = vocabPoolList.filter(
+    v =>
+      /[\u4e00-\u9faf]/.test(v.word) &&
+      v.word.length >= 2 &&
+      v.reading &&
+      v.reading.length >= 2 &&
+      Array.isArray(v.examples) &&
+      v.examples.some(ex => ex.ja.includes(v.word) && ex.ja.length >= 10 && ex.ja.length <= 55)
+  );
 
-// Select 102 for 問題1 (漢字読み) and 102 different ones for 問題2 (表記)
-const mondai1Pool = [];
-const mondai2Pool = [];
-const usedWords = new Set();
+  const m1Pool = [];
+  const m2Pool = [];
+  const used = new Set();
 
-for (const item of kanjiCandidates) {
-  if (usedWords.has(item.word)) continue;
-  const ex = item.examples.find(e => e.ja.includes(item.word) && e.ja.length >= 14 && e.ja.length <= 52);
-  if (!ex) continue;
+  for (const item of kCands) {
+    if (used.has(item.word)) continue;
+    const ex = item.examples.find(e => e.ja.includes(item.word) && e.ja.length >= 10 && e.ja.length <= 55);
+    if (!ex) continue;
 
-  if (mondai1Pool.length < 102) {
-    usedWords.add(item.word);
-    const distractors = makeReadingDistractors(item.reading);
-    const ansIdx = mondai1Pool.length % 4;
-    const options = [...distractors];
-    options.splice(ansIdx, 0, item.reading);
-    mondai1Pool.push({
-      sentence: ex.ja.replace(item.word, `<u>${item.word}</u>`),
-      target: item.word,
-      reading: item.reading,
-      meanings: item.meanings,
-      options,
+    if (m1Pool.length < 102) {
+      used.add(item.word);
+      const distractors = makeReadingDistractors(item.reading);
+      const ansIdx = m1Pool.length % 4;
+      const options = [...distractors];
+      options.splice(ansIdx, 0, item.reading);
+      m1Pool.push({
+        sentence: ex.ja.replace(item.word, `<u>${item.word}</u>`),
+        target: item.word,
+        reading: item.reading,
+        meanings: item.meanings,
+        options,
+        answer: ansIdx,
+        explanation: `「${item.word}」 is read 「${item.reading}」 (${item.meanings.slice(0, 3).join('; ')}). Sentence: "${ex.en}"`
+      });
+    } else if (m2Pool.length < 102 && /^[\u4e00-\u9faf]{2}$/.test(item.word)) {
+      used.add(item.word);
+      const distractors = makeKanjiDistractors(item.word);
+      const ansIdx = m2Pool.length % 4;
+      const options = [...distractors];
+      options.splice(ansIdx, 0, item.word);
+      m2Pool.push({
+        sentence: ex.ja.replace(item.word, `<u>${item.reading}</u>`),
+        target: item.reading,
+        kanji: item.word,
+        meanings: item.meanings,
+        options,
+        answer: ansIdx,
+        explanation: `「${item.reading}」 in this context is written as 「${item.word}」 (${item.meanings.slice(0, 3).join('; ')}). Sentence: "${ex.en}"`
+      });
+    }
+  }
+
+  const ctxCands = vocabPoolList.filter(
+    v =>
+      !used.has(v.word) &&
+      v.word.length >= 2 &&
+      Array.isArray(v.examples) &&
+      v.examples.some(ex => ex.ja.includes(v.word) && ex.ja.length >= 10 && ex.ja.length <= 58)
+  );
+
+  const byPosMap = {};
+  for (const v of vocabPoolList) {
+    const p = (v.pos && v.pos[0]) || 'n';
+    if (!byPosMap[p]) byPosMap[p] = [];
+    byPosMap[p].push(v);
+  }
+
+  const m3Pool = [];
+  for (let i = 0; i < ctxCands.length && m3Pool.length < 170; i++) {
+    const item = ctxCands[i];
+    const ex = item.examples.find(e => e.ja.includes(item.word) && e.ja.length >= 10 && e.ja.length <= 58);
+    if (!ex) continue;
+    used.add(item.word);
+    const p = (item.pos && item.pos[0]) || 'n';
+    const samePosPool = (byPosMap[p] && byPosMap[p].length >= 10 ? byPosMap[p] : vocabPoolList).filter(
+      x => x.word !== item.word && x.meanings[0] !== item.meanings[0]
+    );
+    const distractors = [
+      samePosPool[(i * 5 + 3) % samePosPool.length],
+      samePosPool[(i * 11 + 17) % samePosPool.length],
+      samePosPool[(i * 19 + 31) % samePosPool.length]
+    ];
+    const ansIdx = m3Pool.length % 4;
+    const optionObjs = [...distractors];
+    optionObjs.splice(ansIdx, 0, item);
+
+    const optionDetails = optionObjs
+      .map((o, idx) => `${idx + 1}. ${o.word}（${o.reading}）= ${o.meanings.slice(0, 2).join(', ')}`)
+      .join(' / ');
+
+    m3Pool.push({
+      sentence: ex.ja.replace(item.word, '（　　）'),
+      options: optionObjs.map(o => o.word),
+      optionObjs,
       answer: ansIdx,
-      explanation: `「${item.word}」 is read 「${item.reading}」 (${item.meanings.slice(0, 3).join('; ')}). Sentence: "${ex.en}"`
-    });
-  } else if (mondai2Pool.length < 102 && /^[\u4e00-\u9faf]{2}$/.test(item.word)) {
-    usedWords.add(item.word);
-    const distractors = makeKanjiDistractors(item.word);
-    const ansIdx = mondai2Pool.length % 4;
-    const options = [...distractors];
-    options.splice(ansIdx, 0, item.word);
-    mondai2Pool.push({
-      sentence: ex.ja.replace(item.word, `<u>${item.reading}</u>`),
-      target: item.reading,
-      kanji: item.word,
-      meanings: item.meanings,
-      options,
-      answer: ansIdx,
-      explanation: `「${item.reading}」 in this context is written as 「${item.word}」 (${item.meanings.slice(0, 3).join('; ')}). Sentence: "${ex.en}"`
+      explanation: `Correct: 「${item.word}（${item.reading}）」 (${item.meanings.slice(0, 3).join('; ')}). "${ex.en}" — Options: ${optionDetails}`
     });
   }
+
+  return { m1Pool, m2Pool, m3Pool };
 }
 
-// Select 170 for 問題3 (文脈規定 — Context Vocabulary)
-const contextCandidates = vocabN3.filter(
-  v =>
-    !usedWords.has(v.word) &&
-    v.word.length >= 2 &&
-    Array.isArray(v.examples) &&
-    v.examples.some(ex => ex.ja.includes(v.word) && ex.ja.length >= 16 && ex.ja.length <= 55)
-);
+const n3VocabPools = generateVocabPools(allVocabByLevel.n3);
+const n4VocabPools = generateVocabPools([...allVocabByLevel.n4, ...allVocabByLevel.n5]);
+const mondai1Pool = n3VocabPools.m1Pool;
+const mondai2Pool = n3VocabPools.m2Pool;
+const mondai3Pool = n3VocabPools.m3Pool;
 
-const byPos = {};
-for (const v of vocabN3) {
-  const p = (v.pos && v.pos[0]) || 'n';
-  if (!byPos[p]) byPos[p] = [];
-  byPos[p].push(v);
-}
-
-const mondai3Pool = [];
-for (let i = 0; i < contextCandidates.length && mondai3Pool.length < 170; i++) {
-  const item = contextCandidates[i];
-  const ex = item.examples.find(e => e.ja.includes(item.word) && e.ja.length >= 16 && e.ja.length <= 55);
-  if (!ex) continue;
-  usedWords.add(item.word);
-  const p = (item.pos && item.pos[0]) || 'n';
-  const samePosPool = (byPos[p] && byPos[p].length >= 10 ? byPos[p] : vocabN3).filter(
-    x => x.word !== item.word && x.meanings[0] !== item.meanings[0]
-  );
-  const distractors = [
-    samePosPool[(i * 5 + 3) % samePosPool.length],
-    samePosPool[(i * 11 + 17) % samePosPool.length],
-    samePosPool[(i * 19 + 31) % samePosPool.length]
-  ];
-  const ansIdx = mondai3Pool.length % 4;
-  const optionObjs = [...distractors];
-  optionObjs.splice(ansIdx, 0, item);
-
-  const optionDetails = optionObjs
-    .map((o, idx) => `${idx + 1}. ${o.word}（${o.reading}）= ${o.meanings.slice(0, 2).join(', ')}`)
-    .join(' / ');
-
-  mondai3Pool.push({
-    sentence: ex.ja.replace(item.word, '（　　）'),
-    options: optionObjs.map(o => o.word),
-    optionObjs,
-    answer: ansIdx,
-    explanation: `Correct: 「${item.word}（${item.reading}）」 (${item.meanings.slice(0, 3).join('; ')}). "${ex.en}" — Options: ${optionDetails}`
-  });
-}
-
-console.log(`Generated Vocab Pools: Mondai1=${mondai1Pool.length}, Mondai2=${mondai2Pool.length}, Mondai3=${mondai3Pool.length}`);
+console.log(`Generated N3 Vocab Pools: Mondai1=${mondai1Pool.length}, Mondai2=${mondai2Pool.length}, Mondai3=${mondai3Pool.length}`);
+console.log(`Generated N4 Vocab Pools: Mondai1=${n4VocabPools.m1Pool.length}, Mondai2=${n4VocabPools.m2Pool.length}, Mondai3=${n4VocabPools.m3Pool.length}`);
 
 // Build reverse reading -> words lookup and grammar pattern lookup for Process of Elimination (消去法)
 const readingToWords = new Map();
@@ -816,309 +839,318 @@ const START_DATE = new Date('2026-11-02T00:00:00Z');
 const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
-const exams = [];
+function assembleExamsForLevel(cfg) {
+  const levelExams = [];
 
-for (let d = 0; d < DAYS_COUNT; d++) {
-  const dateObj = new Date(START_DATE.getTime() + d * 86400000);
-  const isoDate = dateObj.toISOString().slice(0, 10); // YYYY-MM-DD
-  const month = dateObj.getUTCMonth() + 1;
-  const dayOfMonth = dateObj.getUTCDate();
-  const dowEn = WEEKDAYS_EN[dateObj.getUTCDay()];
-  const dowJa = WEEKDAYS_JA[dateObj.getUTCDay()];
+  for (let d = 0; d < DAYS_COUNT; d++) {
+    const dateObj = new Date(START_DATE.getTime() + d * 86400000);
+    const isoDate = dateObj.toISOString().slice(0, 10);
+    const month = dateObj.getUTCMonth() + 1;
+    const dayOfMonth = dateObj.getUTCDate();
+    const dowEn = WEEKDAYS_EN[dateObj.getUTCDay()];
+    const dowJa = WEEKDAYS_JA[dateObj.getUTCDay()];
 
-  const m1Items = mondai1Pool.slice(d * 3, d * 3 + 3);
-  const m2Items = mondai2Pool.slice(d * 3, d * 3 + 3);
-  const m3Items = mondai3Pool.slice(d * 5, d * 5 + 5);
-  const m4Items = SYNONYM_QUESTIONS.slice(d * 2, d * 2 + 2);
-  const m5Items = USAGE_QUESTIONS.slice(d * 2, d * 2 + 2);
+    const m1Items = cfg.m1Pool.slice(d * 3, d * 3 + 3);
+    const m2Items = cfg.m2Pool.slice(d * 3, d * 3 + 3);
+    const m3Items = cfg.m3Pool.slice(d * 5, d * 5 + 5);
+    const m4Items = cfg.synonyms.slice(d * 2, d * 2 + 2);
+    const m5Items = cfg.usages.slice(d * 2, d * 2 + 2);
 
-  const g1Items = GRAMMAR_SENTENCE_QUESTIONS.slice(d * 5, d * 5 + 5);
-  const g2Items = STAR_QUESTIONS.slice(d * 2, d * 2 + 2);
-  const clozeItem = CLOZE_PASSAGES[d];
+    const g1Items = cfg.grammarSentences.slice(d * 5, d * 5 + 5);
+    const g2Items = cfg.stars.slice(d * 2, d * 2 + 2);
+    const clozeItem = cfg.clozes[d];
 
-  const shortItems = SHORT_PASSAGES.slice(d * 2, d * 2 + 2);
-  const midItem = MEDIUM_PASSAGES[d];
-  const longItem = LONG_PASSAGES[d];
-  const infoItem = INFO_RETRIEVAL_PASSAGES[d];
+    const shortItems = cfg.shorts.slice(d * 2, d * 2 + 2);
+    const midItem = cfg.mediums[d];
+    const longItem = cfg.longs[d];
+    const infoItem = cfg.infos[d];
 
-  const listeningItems = LISTENING_SETS[d];
+    const listeningItems = cfg.listeningSets[d];
 
-  let qNum = 1;
-  const questions = [];
+    let qNum = 1;
+    const questions = [];
 
-  // SECTION 1: 文字・語彙 (15 Qs: Q1..Q15)
-  for (const item of m1Items) {
-    const q = {
-      qNum: qNum++,
-      section: 'vocab',
-      mondaiId: 'v-m1',
-      mondaiTitle: '問題1　＿＿＿の言葉の読み方として最もよいものを、１・２・３・４から一つ選びなさい。',
-      prompt: item.sentence,
-      targetWord: item.target,
-      hideTargetReading: true,
-      options: item.options,
-      answer: item.answer,
-      explanation: item.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, item);
-    questions.push(q);
-  }
-  for (const item of m2Items) {
-    const q = {
-      qNum: qNum++,
-      section: 'vocab',
-      mondaiId: 'v-m2',
-      mondaiTitle: '問題2　＿＿＿の言葉を漢字で書くとき、最もよいものを、１・２・３・４から一つ選びなさい。',
-      prompt: item.sentence,
-      targetWord: item.target,
-      options: item.options,
-      answer: item.answer,
-      explanation: item.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, item);
-    questions.push(q);
-  }
-  for (const item of m3Items) {
-    const q = {
-      qNum: qNum++,
-      section: 'vocab',
-      mondaiId: 'v-m3',
-      mondaiTitle: '問題3　（　　）に入れるのに最もよいものを、１・２・３・４から一つ選びなさい。',
-      prompt: item.sentence,
-      options: item.options,
-      answer: item.answer,
-      explanation: item.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, item);
-    questions.push(q);
-  }
-  for (const item of m4Items) {
-    const q = {
-      qNum: qNum++,
-      section: 'vocab',
-      mondaiId: 'v-m4',
-      mondaiTitle: '問題4　＿＿＿の言葉に意味が最も近いものを、１・２・３・４から一つ選びなさい。',
-      prompt: item.sentence,
-      targetWord: item.target,
-      options: item.options,
-      answer: item.answer,
-      explanation: item.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, item);
-    questions.push(q);
-  }
-  for (const item of m5Items) {
-    const q = {
-      qNum: qNum++,
-      section: 'vocab',
-      mondaiId: 'v-m5',
-      mondaiTitle: '問題5　次の言葉の使い方として最もよいものを、１・２・３・４から一つ選びなさい。',
-      prompt: `【 ${item.word} 】`,
-      options: item.options,
-      answer: item.answer,
-      explanation: item.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, item);
-    questions.push(q);
-  }
-
-  // SECTION 2 PART A: 文法 (10 Qs: Q16..Q25)
-  for (const item of g1Items) {
-    const q = {
-      qNum: qNum++,
-      section: 'grammar',
-      mondaiId: 'g-m1',
-      mondaiTitle: '問題1　次の文の（　　）に入れるのに最もよいものを、１・２・３・４から一つ選びなさい。',
-      prompt: item.sentence,
-      options: item.options,
-      answer: item.answer,
-      explanation: item.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, item);
-    questions.push(q);
-  }
-  for (const item of g2Items) {
-    const q = {
-      qNum: qNum++,
-      section: 'grammar',
-      mondaiId: 'g-m2',
-      mondaiTitle: '問題2　次の文の ＿＿ に入る最もよいものを、１・２・３・４から一つ選びなさい。',
-      type: 'star',
-      prefix: item.prefix,
-      suffix: item.suffix,
-      starPosition: item.starPosition,
-      correctOrder: item.correctOrder,
-      prompt: `${item.prefix} ${[1, 2, 3, 4].map(pos => (pos === item.starPosition ? '＿★＿' : '＿＿')).join(' ')} ${item.suffix}`,
-      options: item.options,
-      answer: item.answer,
-      explanation: item.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, item);
-    questions.push(q);
-  }
-  // 問題3 文章の文法 (Cloze passage: Q23, Q24, Q25)
-  clozeItem.questions.forEach((cq, idx) => {
-    const q = {
-      qNum: qNum++,
-      section: 'grammar',
-      mondaiId: 'g-m3',
-      mondaiTitle: '問題3　次の文章を読んで、文章全体の趣旨を踏まえて、[ 23 ] から [ 25 ] の中に入る最もよいものを、１・２・３・４から一つ選びなさい。',
-      passageGroupId: `day-${d + 1}-cloze`,
-      passageText: idx === 0 ? clozeItem.passage : null,
-      prompt: `${cq.blank} に入る最もよいものを選びなさい。`,
-      options: cq.options,
-      answer: cq.answer,
-      explanation: cq.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, cq);
-    questions.push(q);
-  });
-
-  // SECTION 2 PART B: 読解 (8 Qs: Q26..Q33)
-  // 問題4 短文 (2 passages: Q26, Q27)
-  shortItems.forEach((sp, idx) => {
-    const q = {
-      qNum: qNum++,
-      section: 'reading',
-      mondaiId: 'r-m4',
-      mondaiTitle: '問題4　次の（1）・（2）の文章を読んで、質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
-      passageGroupId: `day-${d + 1}-short-${idx + 1}`,
-      passageLabel: `（${idx + 1}）`,
-      passageTitle: sp.title || null,
-      passageStyle: sp.style || 'essay',
-      passageText: sp.passage,
-      prompt: sp.question,
-      options: sp.options,
-      answer: sp.answer,
-      explanation: sp.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, sp);
-    questions.push(q);
-  });
-
-  // 問題5 中文 (1 passage, 2 Qs: Q28, Q29)
-  midItem.questions.forEach((mq, idx) => {
-    const q = {
-      qNum: qNum++,
-      section: 'reading',
-      mondaiId: 'r-m5',
-      mondaiTitle: '問題5　次の文章を読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
-      passageGroupId: `day-${d + 1}-mid`,
-      passageTitle: idx === 0 ? midItem.title : null,
-      passageText: idx === 0 ? midItem.passage : null,
-      prompt: mq.prompt,
-      options: mq.options,
-      answer: mq.answer,
-      explanation: mq.explanation
-    };
-    q.optionReasons = buildOptionReasons({ ...q, passageText: midItem.passage }, mq);
-    questions.push(q);
-  });
-
-  // 問題6 長文 (1 passage, 2 Qs: Q30, Q31)
-  longItem.questions.forEach((lq, idx) => {
-    const q = {
-      qNum: qNum++,
-      section: 'reading',
-      mondaiId: 'r-m6',
-      mondaiTitle: '問題6　次の文章を読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
-      passageGroupId: `day-${d + 1}-long`,
-      passageTitle: idx === 0 ? longItem.title : null,
-      passageText: idx === 0 ? longItem.passage : null,
-      prompt: lq.prompt,
-      options: lq.options,
-      answer: lq.answer,
-      explanation: lq.explanation
-    };
-    q.optionReasons = buildOptionReasons({ ...q, passageText: longItem.passage }, lq);
-    questions.push(q);
-  });
-
-  // 問題7 情報検索 (1 flyer + table, 2 Qs: Q32, Q33)
-  infoItem.questions.forEach((iq, idx) => {
-    const q = {
-      qNum: qNum++,
-      section: 'reading',
-      mondaiId: 'r-m7',
-      mondaiTitle: '問題7　右のページは、案内やのお知らせです。これを読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
-      passageGroupId: `day-${d + 1}-info`,
-      passageTitle: idx === 0 ? infoItem.title : null,
-      passageText: idx === 0 ? infoItem.intro : null,
-      passageTable: idx === 0 ? infoItem.table : null,
-      passageNotes: idx === 0 ? infoItem.notes : null,
-      prompt: iq.prompt,
-      options: iq.options,
-      answer: iq.answer,
-      explanation: iq.explanation
-    };
-    q.optionReasons = buildOptionReasons({ ...q, passageText: infoItem.intro, passageNotes: infoItem.notes }, iq);
-    questions.push(q);
-  });
-
-  // SECTION 3: 聴解 (7 Qs: Q34..Q40)
-  listeningItems.forEach(lq => {
-    const curQNum = qNum++;
-    const q = {
-      qNum: curQNum,
-      section: 'listening',
-      mondaiId: `l-${lq.mondai.slice(0, 3)}`,
-      mondaiTitle: `聴解 ${lq.mondai}　音声を聞いて、最もよいものを一つ選びなさい。`,
-      audioFile: `./audio/d${d + 1}-q${curQNum}.mp3`,
-      listeningIntro: lq.intro,
-      dialogue: lq.dialogue,
-      prompt: lq.question,
-      options: lq.options,
-      answer: lq.answer,
-      explanation: lq.explanation
-    };
-    q.optionReasons = buildOptionReasons(q, lq);
-    questions.push(q);
-  });
-
-  // Index all text in this day's exam for our offline dictionary bundle
-  for (const q of questions) {
-    indexText(q.mondaiTitle);
-    indexText(q.passageTitle);
-    indexText(q.passageText);
-    indexText(q.passageNotes);
-    if (q.passageTable) {
-      q.passageTable.headers.forEach(indexText);
-      q.passageTable.rows.forEach(r => r.forEach(indexText));
-    }
-    indexText(q.listeningIntro);
-    if (q.dialogue) q.dialogue.forEach(line => indexText(line.text));
-    indexText(q.prompt);
-    q.options.forEach(indexText);
-  }
-
-  exams.push({
-    day: d + 1,
-    date: isoDate,
-    labelEn: `${dowEn}, ${dayOfMonth} Nov 2026`.replace('Nov', month === 11 ? 'Nov' : 'Dec'),
-    labelJa: `${month}月${dayOfMonth}日（${dowJa}）`,
-    durationSeconds: 3600, // 60 minutes (1 hour)
-    totalQuestions: questions.length,
-    questions
-  });
-}
-
-// Also ensure all N3 & N4 vocab words are included in usedDictionary for complete coverage
-for (const lvl of ['n3', 'n4', 'n5']) {
-  for (const v of allVocabByLevel[lvl]) {
-    if (!usedDictionary[v.word]) {
-      usedDictionary[v.word] = {
-        w: v.word,
-        r: v.reading || v.word,
-        m: (v.meanings || []).slice(0, 4).join('; '),
-        l: v.level || lvl.toUpperCase(),
-        p: (v.pos || [])[0] || 'n'
+    // SECTION 1: 文字・語彙 (15 Qs: Q1..Q15)
+    for (const item of m1Items) {
+      const q = {
+        qNum: qNum++,
+        section: 'vocab',
+        mondaiId: 'v-m1',
+        mondaiTitle: '問題1　＿＿＿の言葉の読み方として最もよいものを、１・２・３・４から一つ選びなさい。',
+        prompt: item.sentence,
+        targetWord: item.target,
+        hideTargetReading: true,
+        options: item.options,
+        answer: item.answer,
+        explanation: item.explanation
       };
+      q.optionReasons = buildOptionReasons(q, item);
+      questions.push(q);
     }
+    for (const item of m2Items) {
+      const q = {
+        qNum: qNum++,
+        section: 'vocab',
+        mondaiId: 'v-m2',
+        mondaiTitle: '問題2　＿＿＿の言葉を漢字で書くとき、最もよいものを、１・２・３・４から一つ選びなさい。',
+        prompt: item.sentence,
+        targetWord: item.target,
+        options: item.options,
+        answer: item.answer,
+        explanation: item.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, item);
+      questions.push(q);
+    }
+    for (const item of m3Items) {
+      const q = {
+        qNum: qNum++,
+        section: 'vocab',
+        mondaiId: 'v-m3',
+        mondaiTitle: '問題3　（　　）に入れるのに最もよいものを、１・２・３・４から一つ選びなさい。',
+        prompt: item.sentence,
+        options: item.options,
+        answer: item.answer,
+        explanation: item.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, item);
+      questions.push(q);
+    }
+    for (const item of m4Items) {
+      const q = {
+        qNum: qNum++,
+        section: 'vocab',
+        mondaiId: 'v-m4',
+        mondaiTitle: '問題4　＿＿＿の言葉に意味が最も近いものを、１・２・３・４から一つ選びなさい。',
+        prompt: item.sentence,
+        targetWord: item.target,
+        options: item.options,
+        answer: item.answer,
+        explanation: item.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, item);
+      questions.push(q);
+    }
+    for (const item of m5Items) {
+      const q = {
+        qNum: qNum++,
+        section: 'vocab',
+        mondaiId: 'v-m5',
+        mondaiTitle: '問題5　次の言葉の使い方として最もよいものを、１・２・３・４から一つ選びなさい。',
+        prompt: `【 ${item.word} 】`,
+        options: item.options,
+        answer: item.answer,
+        explanation: item.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, item);
+      questions.push(q);
+    }
+
+    // SECTION 2 PART A: 文法 (10 Qs: Q16..Q25)
+    for (const item of g1Items) {
+      const q = {
+        qNum: qNum++,
+        section: 'grammar',
+        mondaiId: 'g-m1',
+        mondaiTitle: '問題1　次の文の（　　）に入れるのに最もよいものを、１・２・３・４から一つ選びなさい。',
+        prompt: item.sentence,
+        options: item.options,
+        answer: item.answer,
+        explanation: item.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, item);
+      questions.push(q);
+    }
+    for (const item of g2Items) {
+      const q = {
+        qNum: qNum++,
+        section: 'grammar',
+        mondaiId: 'g-m2',
+        mondaiTitle: '問題2　次の文の ＿＿ に入る最もよいものを、１・２・３・４から一つ選びなさい。',
+        type: 'star',
+        prefix: item.prefix,
+        suffix: item.suffix,
+        starPosition: item.starPosition,
+        correctOrder: item.correctOrder,
+        prompt: `${item.prefix} ${[1, 2, 3, 4].map(pos => (pos === item.starPosition ? '＿★＿' : '＿＿')).join(' ')} ${item.suffix}`,
+        options: item.options,
+        answer: item.answer,
+        explanation: item.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, item);
+      questions.push(q);
+    }
+    // 問題3 文章の文法 (Cloze passage: Q23, Q24, Q25)
+    clozeItem.questions.forEach((cq, idx) => {
+      const q = {
+        qNum: qNum++,
+        section: 'grammar',
+        mondaiId: 'g-m3',
+        mondaiTitle: '問題3　次の文章を読んで、文章全体の趣旨を踏まえて、[ 23 ] から [ 25 ] の中に入る最もよいものを、１・２・３・４から一つ選びなさい。',
+        passageGroupId: `${cfg.level}-day-${d + 1}-cloze`,
+        passageText: idx === 0 ? clozeItem.passage : null,
+        prompt: `${cq.blank} に入る最もよいものを選びなさい。`,
+        options: cq.options,
+        answer: cq.answer,
+        explanation: cq.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, cq);
+      questions.push(q);
+    });
+
+    // SECTION 2 PART B: 読解 (8 Qs: Q26..Q33)
+    shortItems.forEach((sp, idx) => {
+      const q = {
+        qNum: qNum++,
+        section: 'reading',
+        mondaiId: 'r-m4',
+        mondaiTitle: '問題4　次の（1）・（2）の文章を読んで、質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
+        passageGroupId: `${cfg.level}-day-${d + 1}-short-${idx + 1}`,
+        passageLabel: `（${idx + 1}）`,
+        passageTitle: sp.title || null,
+        passageStyle: sp.style || 'essay',
+        passageText: sp.passage,
+        prompt: sp.question,
+        options: sp.options,
+        answer: sp.answer,
+        explanation: sp.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, sp);
+      questions.push(q);
+    });
+
+    midItem.questions.forEach((mq, idx) => {
+      const q = {
+        qNum: qNum++,
+        section: 'reading',
+        mondaiId: 'r-m5',
+        mondaiTitle: '問題5　次の文章を読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
+        passageGroupId: `${cfg.level}-day-${d + 1}-mid`,
+        passageTitle: idx === 0 ? midItem.title : null,
+        passageText: idx === 0 ? midItem.passage : null,
+        prompt: mq.prompt,
+        options: mq.options,
+        answer: mq.answer,
+        explanation: mq.explanation
+      };
+      q.optionReasons = buildOptionReasons({ ...q, passageText: midItem.passage }, mq);
+      questions.push(q);
+    });
+
+    longItem.questions.forEach((lq, idx) => {
+      const q = {
+        qNum: qNum++,
+        section: 'reading',
+        mondaiId: 'r-m6',
+        mondaiTitle: '問題6　次の文章を読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
+        passageGroupId: `${cfg.level}-day-${d + 1}-long`,
+        passageTitle: idx === 0 ? longItem.title : null,
+        passageText: idx === 0 ? longItem.passage : null,
+        prompt: lq.prompt,
+        options: lq.options,
+        answer: lq.answer,
+        explanation: lq.explanation
+      };
+      q.optionReasons = buildOptionReasons({ ...q, passageText: longItem.passage }, lq);
+      questions.push(q);
+    });
+
+    infoItem.questions.forEach((iq, idx) => {
+      const q = {
+        qNum: qNum++,
+        section: 'reading',
+        mondaiId: 'r-m7',
+        mondaiTitle: '問題7　右のページは、案内やのお知らせです。これを読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
+        passageGroupId: `${cfg.level}-day-${d + 1}-info`,
+        passageTitle: idx === 0 ? infoItem.title : null,
+        passageText: idx === 0 ? infoItem.intro : null,
+        passageTable: idx === 0 ? infoItem.table : null,
+        passageNotes: idx === 0 ? infoItem.notes : null,
+        prompt: iq.prompt,
+        options: iq.options,
+        answer: iq.answer,
+        explanation: iq.explanation
+      };
+      q.optionReasons = buildOptionReasons({ ...q, passageText: infoItem.intro, passageNotes: infoItem.notes }, iq);
+      questions.push(q);
+    });
+
+    // SECTION 3: 聴解 (7 Qs: Q34..Q40)
+    listeningItems.forEach(lq => {
+      const curQNum = qNum++;
+      const q = {
+        qNum: curQNum,
+        section: 'listening',
+        mondaiId: `l-${lq.mondai.slice(0, 3)}`,
+        mondaiTitle: `聴解 ${lq.mondai}　音声を聞いて、最もよいものを一つ選びなさい。`,
+        audioFile: `./${cfg.audioFolder}/d${d + 1}-q${curQNum}.mp3`,
+        listeningIntro: lq.intro,
+        dialogue: lq.dialogue,
+        prompt: lq.question,
+        options: lq.options,
+        answer: lq.answer,
+        explanation: lq.explanation
+      };
+      q.optionReasons = buildOptionReasons(q, lq);
+      questions.push(q);
+    });
+
+    levelExams.push({
+      level: cfg.level,
+      day: d + 1,
+      date: isoDate,
+      labelEn: `${dowEn}, ${dayOfMonth} Nov 2026`.replace('Nov', month === 11 ? 'Nov' : 'Dec'),
+      labelJa: `${month}月${dayOfMonth}日（${dowJa}）`,
+      durationSeconds: 3600,
+      totalQuestions: questions.length,
+      questions
+    });
   }
+
+  return levelExams;
 }
 
-fs.writeFileSync(path.join(OUT_DIR, 'exams.json'), JSON.stringify(exams));
-fs.writeFileSync(path.join(OUT_DIR, 'dictionary.json'), JSON.stringify(usedDictionary));
+const examsN3 = assembleExamsForLevel({
+  level: 'N3',
+  audioFolder: 'audio',
+  m1Pool: n3VocabPools.m1Pool,
+  m2Pool: n3VocabPools.m2Pool,
+  m3Pool: n3VocabPools.m3Pool,
+  synonyms: SYNONYM_QUESTIONS,
+  usages: USAGE_QUESTIONS,
+  grammarSentences: GRAMMAR_SENTENCE_QUESTIONS,
+  stars: STAR_QUESTIONS,
+  clozes: CLOZE_PASSAGES,
+  shorts: SHORT_PASSAGES,
+  mediums: MEDIUM_PASSAGES,
+  longs: LONG_PASSAGES,
+  infos: INFO_RETRIEVAL_PASSAGES,
+  listeningSets: LISTENING_SETS
+});
 
-console.log(`Built ${exams.length} daily exams (${exams[0].totalQuestions} Qs/day = ${exams.length * exams[0].totalQuestions} total Qs).`);
-console.log(`Built offline dictionary bundle with ${Object.keys(usedDictionary).length} indexed Japanese words/tokens.`);
+const examsN4 = assembleExamsForLevel({
+  level: 'N4',
+  audioFolder: 'audio-n4',
+  m1Pool: n4VocabPools.m1Pool,
+  m2Pool: n4VocabPools.m2Pool,
+  m3Pool: n4VocabPools.m3Pool,
+  synonyms: N4_SYNONYM_QUESTIONS,
+  usages: N4_USAGE_QUESTIONS,
+  grammarSentences: N4_GRAMMAR_SENTENCE_QUESTIONS,
+  stars: N4_STAR_QUESTIONS,
+  clozes: N4_CLOZE_PASSAGES,
+  shorts: N4_SHORT_PASSAGES,
+  mediums: N4_MEDIUM_PASSAGES,
+  longs: N4_LONG_PASSAGES,
+  infos: N4_INFO_RETRIEVAL_PASSAGES,
+  listeningSets: N4_LISTENING_SETS
+});
+
+fs.writeFileSync(path.join(OUT_DIR, 'exams.json'), JSON.stringify(examsN3));
+fs.writeFileSync(path.join(OUT_DIR, 'exams-n3.json'), JSON.stringify(examsN3));
+fs.writeFileSync(path.join(OUT_DIR, 'exams-n4.json'), JSON.stringify(examsN4));
+fs.writeFileSync(path.join(PUBLIC_DATA_DIR, 'exams-n3.json'), JSON.stringify(examsN3));
+fs.writeFileSync(path.join(PUBLIC_DATA_DIR, 'exams-n4.json'), JSON.stringify(examsN4));
+
+console.log(`Built N3: ${examsN3.length} daily exams (${examsN3.length * 40} Qs)`);
+console.log(`Built N4: ${examsN4.length} daily exams (${examsN4.length * 40} Qs)`);
