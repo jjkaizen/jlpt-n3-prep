@@ -1,5 +1,7 @@
 # JLPT N3 · 1-Hour Daily Exam Trainer (Nov 2 – Dec 6, 2026)
 
+**Live Web App:** [https://jjkaizen.github.io/jlpt-n3-prep/index.html](https://jjkaizen.github.io/jlpt-n3-prep/index.html)
+
 A distraction-free, offline-capable web application built for **JLPT N3 preparation** leading up to **Sunday, 6 December 2026**.
 
 ## Features
