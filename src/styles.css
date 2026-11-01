@@ -447,14 +447,116 @@ body {
   background: #fcfbf7;
   border: 2px solid #18181b;
   border-radius: 8px;
-  padding: 0.55rem 0.8rem;
+  padding: 0.55rem 0.8rem 0.65rem;
   margin-bottom: 1rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.09);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.exam-sticky-top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+/* Dual Progress & Time Pacing Bars */
+.dual-pacing-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.pacing-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pacing-label {
+  width: 82px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  line-height: 1.15;
+}
+
+.pacing-track {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  background: #e4e4e7;
+  border: 1px solid #27272a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.pacing-fill-questions {
+  height: 100%;
+  background: #15803d;
+  transition: width 0.22s ease;
+}
+
+.pacing-fill-time {
+  height: 100%;
+  background: #b45309;
+  transition: width 0.4s linear;
+}
+
+.pacing-fill-time.behind {
+  background: #b91c1c;
+}
+
+.pacing-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: #18181b;
+  z-index: 2;
+}
+
+.pacing-zones-legend {
+  display: flex;
+  margin-left: 82px;
+  padding-left: 0.5rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+  line-height: 1.2;
+}
+
+.pacing-zone-item {
+  border-right: 1.5px dashed #71717a;
+  padding: 0 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pacing-zone-item:first-child {
+  padding-left: 0;
+}
+
+.pacing-zone-item:last-child {
+  border-right: none;
+}
+
+@media (max-width: 520px) {
+  .pacing-label {
+    width: 66px;
+    font-size: 0.63rem;
+  }
+  .pacing-zones-legend {
+    margin-left: 66px;
+    font-size: 0.6rem;
+  }
 }
 
 .timer-box {

@@ -277,6 +277,29 @@ function isTabActivelyFocused() {
   return !document.hidden && document.hasFocus();
 }
 
+// Compute weighted question progress % aligned with the 4 time zones:
+// Zone 1: Q1..7 (Vocab, 7m = 23.33%), Zone 2: Q8..12 (Grammar, 5m = 16.67%),
+// Zone 3: Q13..16 (Reading, 10m = 33.33%), Zone 4: Q17..20 (Listening, 8m = 26.67%)
+function computeWeightedQuestionProgressPct(answers) {
+  let pct = 0;
+  for (const k of Object.keys(answers || {})) {
+    const q = Number(k);
+    if (q >= 1 && q <= 7) pct += 23.3333 / 7;
+    else if (q >= 8 && q <= 12) pct += 16.6667 / 5;
+    else if (q >= 13 && q <= 16) pct += 33.3333 / 4;
+    else if (q >= 17 && q <= 20) pct += 26.6667 / 4;
+  }
+  return Math.min(100, Math.round(pct * 10) / 10);
+}
+
+function getCurrentTimeZoneTarget(remainingSeconds) {
+  const elapsed = Math.max(0, 1800 - remainingSeconds);
+  if (elapsed < 420) return 'Target: 語彙 Q1–7 (Finish by 23:00 left / 7m)';
+  if (elapsed < 720) return 'Target: 文法 Q8–12 (Finish by 18:00 left / 12m)';
+  if (elapsed < 1320) return 'Target: 読解 Q13–16 (Finish by 08:00 left / 22m)';
+  return 'Target: 聴解 Q17–20 (Finish by 00:00 / 30m)';
+}
+
 function updateTimerBadgeDom() {
   if (!appState.currentExamDay) return;
   const cur = getDayState(appState.currentExamDay);
@@ -291,6 +314,31 @@ function updateTimerBadgeDom() {
     } else {
       boxEl.classList.remove('paused');
     }
+  }
+
+  // Update Time Pacing Bar & Target Pill in real time
+  const elapsed = Math.max(0, 1800 - cur.remainingSeconds);
+  const timePct = Math.min(100, (elapsed / 1800) * 100);
+  const qPct = computeWeightedQuestionProgressPct(cur.answers);
+
+  const timeFillEl = document.getElementById('live-time-bar-fill');
+  if (timeFillEl) {
+    timeFillEl.style.width = `${timePct.toFixed(1)}%`;
+    if (timePct > qPct + 6) {
+      timeFillEl.classList.add('behind');
+    } else {
+      timeFillEl.classList.remove('behind');
+    }
+  }
+
+  const timeLabelEl = document.getElementById('live-time-bar-label');
+  if (timeLabelEl) {
+    timeLabelEl.textContent = `⏱ ${Math.floor(elapsed / 60)}m / 30m`;
+  }
+
+  const targetEl = document.getElementById('live-pace-target-text');
+  if (targetEl) {
+    targetEl.textContent = getCurrentTimeZoneTarget(cur.remainingSeconds);
   }
 }
 
@@ -1018,39 +1066,92 @@ function renderExamPaperScreen() {
     `;
   }
 
+  const qWeightedPct = computeWeightedQuestionProgressPct(st.answers);
+  const elapsedSeconds = Math.max(0, 1800 - st.remainingSeconds);
+  const timeElapsedPct = Math.min(100, (elapsedSeconds / 1800) * 100);
+  const isBehindPace = timeElapsedPct > qWeightedPct + 6;
+
   return `
     <div class="exam-sticky-bar">
-      <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-        <button class="btn-secondary" data-action="pause-and-exit" title="Save progress and return to Daily List">
-          ← Save & Exit
-        </button>
-        <span style="font-weight:800; font-size:0.88rem;">${appState.level} · Day ${exam.day} (${esc(exam.labelJa)})</span>
+      <div class="exam-sticky-top-row">
+        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          <button class="btn-secondary" data-action="pause-and-exit" title="Save progress and return to Daily List">
+            ← Save & Exit
+          </button>
+          <span style="font-weight:800; font-size:0.88rem;">${appState.level} · Day ${exam.day} (${esc(exam.labelJa)})</span>
+          ${
+            !isCompleted
+              ? `<span id="live-pace-target-text" style="font-size:0.74rem; font-weight:700; color:var(--accent); background:var(--accent-bg); padding:0.12rem 0.45rem; border-radius:4px;">${esc(
+                  getCurrentTimeZoneTarget(st.remainingSeconds)
+                )}</span>`
+              : ''
+          }
+        </div>
+
+        <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+          ${
+            !isCompleted
+              ? `
+            <div id="live-timer-box" class="timer-box ${appState.timerPaused ? 'paused' : ''} ${
+                  st.remainingSeconds < 300 ? 'urgent' : ''
+                }" title="Timer automatically pauses when you switch tabs or close the browser">
+              <span>⏱</span>
+              <span id="live-timer-val">${formatTime(st.remainingSeconds)}</span>
+            </div>
+          `
+              : `<span class="badge badge-pass">Graded · Review Mode</span>`
+          }
+          <button class="btn-secondary" data-action="toggle-jump-drawer">
+            📋 ${answeredCount}/${exam.totalQuestions} Qs
+          </button>
+          ${
+            !isCompleted
+              ? `<button class="btn-primary" style="padding:0.45rem 0.85rem; font-size:0.82rem;" data-action="grade-exam">
+                  ✓ Finish & Grade
+                </button>`
+              : ''
+          }
+        </div>
       </div>
 
-      <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-        ${
-          !isCompleted
-            ? `
-          <div id="live-timer-box" class="timer-box ${appState.timerPaused ? 'paused' : ''} ${
-                st.remainingSeconds < 300 ? 'urgent' : ''
-              }" title="Timer automatically pauses when you switch tabs or close the browser">
-            <span>⏱</span>
-            <span id="live-timer-val">${formatTime(st.remainingSeconds)}</span>
+      ${
+        !isCompleted
+          ? `
+        <div class="dual-pacing-wrap">
+          <div class="pacing-row">
+            <div class="pacing-label">✓ Questions<br/><b>${answeredCount} / ${exam.totalQuestions} Done</b></div>
+            <div class="pacing-track" title="Your Question Progress aligned with section time weights">
+              <div class="pacing-tick" style="left:23.33%;"></div>
+              <div class="pacing-tick" style="left:40.00%;"></div>
+              <div class="pacing-tick" style="left:73.33%;"></div>
+              <div class="pacing-fill-questions" style="width:${qWeightedPct}%;"></div>
+            </div>
           </div>
-        `
-            : `<span class="badge badge-pass">Graded · Review Mode</span>`
-        }
-        <button class="btn-secondary" data-action="toggle-jump-drawer">
-          📋 ${answeredCount}/${exam.totalQuestions} Qs
-        </button>
-        ${
-          !isCompleted
-            ? `<button class="btn-primary" style="padding:0.45rem 0.85rem; font-size:0.82rem;" data-action="grade-exam">
-                ✓ Finish & Grade
-              </button>`
-            : ''
-        }
-      </div>
+
+          <div class="pacing-row">
+            <div class="pacing-label">⏱ Time Pace<br/><b id="live-time-bar-label">⏱ ${Math.floor(
+              elapsedSeconds / 60
+            )}m / 30m</b></div>
+            <div class="pacing-track" title="30-Minute Time Pacing with Section Deadlines">
+              <div class="pacing-tick" style="left:23.33%;"></div>
+              <div class="pacing-tick" style="left:40.00%;"></div>
+              <div class="pacing-tick" style="left:73.33%;"></div>
+              <div id="live-time-bar-fill" class="pacing-fill-time ${
+                isBehindPace ? 'behind' : ''
+              }" style="width:${timeElapsedPct.toFixed(1)}%;"></div>
+            </div>
+          </div>
+
+          <div class="pacing-zones-legend">
+            <div class="pacing-zone-item" style="width:23.33%;">語彙 Q1–7 · <b>by 7m</b> (23:00 left)</div>
+            <div class="pacing-zone-item" style="width:16.67%;">文法 Q8–12 · <b>by 12m</b> (18:00)</div>
+            <div class="pacing-zone-item" style="width:33.33%;">読解 Q13–16 · <b>by 22m</b> (08:00 left)</div>
+            <div class="pacing-zone-item" style="width:26.67%;">聴解 Q17–20 · <b>by 30m</b> (00:00)</div>
+          </div>
+        </div>
+      `
+          : ''
+      }
     </div>
 
     ${jumpDrawerHtml}
