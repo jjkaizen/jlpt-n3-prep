@@ -1,6 +1,5 @@
 import './styles.css';
 import examsData from './data/exams.json';
-import dictionaryData from './data/dictionary.json';
 
 const STORAGE_KEY = 'jlpt_n3_daily_state_v1';
 
@@ -135,110 +134,56 @@ function esc(str = '') {
     .replace(/"/g, '&quot;');
 }
 
-// Japanese Word Segmentation + Dictionary Wrapper
+// Japanese Word Segmentation -> Direct 1-Tap jpdb.io Link
 const segmenter =
   typeof Intl !== 'undefined' && Intl.Segmenter
     ? new Intl.Segmenter('ja', { granularity: 'word' })
     : null;
 
-function lookupWordInfo(surface) {
-  const clean = surface.trim();
-  if (!clean) return null;
-  if (dictionaryData[clean]) {
-    return { surface: clean, ...dictionaryData[clean] };
-  }
-  // Strip polite prefix お / ご
-  if (/^[おご御].+/.test(clean) && clean.length >= 2) {
-    const sub = dictionaryData[clean.slice(1)];
-    if (sub) {
-      return {
-        surface: clean,
-        w: clean,
-        r: (clean[0] === 'ご' ? 'ご' : 'お') + (sub.r || ''),
-        m: `(polite) ${sub.m}`,
-        l: sub.l || 'N3',
-        p: sub.p || 'n'
-      };
-    }
-  }
-  // Try progressive prefix match
-  for (let len = clean.length - 1; len >= 1; len--) {
-    const sub = dictionaryData[clean.slice(0, len)];
-    if (sub) {
-      return { surface: clean, ...sub };
-    }
-  }
-  return {
-    surface: clean,
-    w: clean,
-    r: clean,
-    m: 'Click "Open in jpdb.io" below for full dictionary breakdown.',
-    l: '',
-    p: ''
-  };
+function jpdbUrl(word) {
+  return `https://jpdb.io/search?q=${encodeURIComponent(word)}&lang=english#a`;
 }
 
-function tokenizePlainSegment(text, opts = {}) {
+function tokenizePlainSegment(text) {
   if (!text) return '';
   if (!segmenter) {
-    return `<span class="jp-word" data-surface="${esc(text)}">${esc(text)}</span>`;
+    return `<a class="jp-word" href="${jpdbUrl(text)}" target="_blank" rel="noopener noreferrer">${esc(
+      text
+    )}</a>`;
   }
   const rawSegs = [...segmenter.segment(text)];
   let html = '';
-  let i = 0;
 
-  while (i < rawSegs.length) {
-    const s = rawSegs[i];
+  for (const s of rawSegs) {
     const segText = s.segment;
     const isJapaneseWord =
       s.isWordLike && /[\u3040-\u30ff\u4e00-\u9faf]/.test(segText);
 
     if (!isJapaneseWord) {
       html += esc(segText);
-      i++;
       continue;
     }
 
-    // Check if 2-segment compound exists in dictionaryData (e.g., ご + 利用, 会議 + 室)
-    let matchedText = segText;
-    let consume = 1;
-    if (
-      i + 1 < rawSegs.length &&
-      rawSegs[i + 1].isWordLike &&
-      dictionaryData[segText + rawSegs[i + 1].segment]
-    ) {
-      matchedText = segText + rawSegs[i + 1].segment;
-      consume = 2;
-    }
-
-    const hideAttr =
-      opts.hideReadingFor && matchedText === opts.hideReadingFor ? ' data-hide-reading="1"' : '';
-    const optAttr =
-      opts.optionIdx !== undefined && opts.qNum !== undefined
-        ? ` data-qnum="${opts.qNum}" data-optidx="${opts.optionIdx}"`
-        : '';
-
-    html += `<span class="jp-word" data-surface="${esc(matchedText)}"${hideAttr}${optAttr}>${esc(
-      matchedText
-    )}</span>`;
-    i += consume;
+    html += `<a class="jp-word" href="${jpdbUrl(
+      segText
+    )}" target="_blank" rel="noopener noreferrer">${esc(segText)}</a>`;
   }
   return html;
 }
 
 // Tokenize text that may contain <u>...</u> underline tags or newlines
-function renderClickableJapanese(text, opts = {}) {
+function renderClickableJapanese(text) {
   if (!text) return '';
   const parts = String(text).split(/(<u>[\s\S]*?<\/u>)/g);
   return parts
     .map(part => {
       if (part.startsWith('<u>') && part.endsWith('</u>')) {
         const inner = part.slice(3, -4);
-        return `<u>${tokenizePlainSegment(inner, opts)}</u>`;
+        return `<u>${tokenizePlainSegment(inner)}</u>`;
       }
       return part
         .split('\n')
-        .map(line => tokenizePlainSegment(line, opts))
+        .map(line => tokenizePlainSegment(line))
         .join('<br/>');
     })
     .join('');
@@ -1372,28 +1317,10 @@ function renderApp() {
 
 // Global Event Delegation
 document.addEventListener('click', event => {
-  // 1. Check if a Japanese word (.jp-word) was clicked
+  // 1. If a Japanese word link (.jp-word) was clicked, let the native <a href="https://jpdb.io/..." target="_blank"> open directly!
   const wordEl = event.target.closest('.jp-word');
   if (wordEl) {
     event.stopPropagation();
-    const surface = wordEl.getAttribute('data-surface');
-    const hideReading = wordEl.getAttribute('data-hide-reading') === '1';
-    const qNumAttr = wordEl.getAttribute('data-qnum');
-    const optIdxAttr = wordEl.getAttribute('data-optidx');
-
-    const info = lookupWordInfo(surface);
-    if (info) {
-      appState.activeWordPopup = {
-        ...info,
-        hideReading,
-        revealedReading: false,
-        optionContext:
-          qNumAttr !== null && optIdxAttr !== null
-            ? { qNum: Number(qNumAttr), optIdx: Number(optIdxAttr) }
-            : null
-      };
-      renderApp();
-    }
     return;
   }
 
@@ -1402,20 +1329,6 @@ document.addEventListener('click', event => {
   if (!actionEl) return;
 
   const action = actionEl.getAttribute('data-action');
-
-  if (action === 'close-word-popup') {
-    appState.activeWordPopup = null;
-    renderApp();
-    return;
-  }
-
-  if (action === 'reveal-target-reading') {
-    if (appState.activeWordPopup) {
-      appState.activeWordPopup.revealedReading = true;
-      renderApp();
-    }
-    return;
-  }
 
   if (action === 'switch-tab') {
     const tab = actionEl.getAttribute('data-tab');

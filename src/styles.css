@@ -904,8 +904,10 @@ body {
   background: #fef2f2;
 }
 
-/* Clickable Japanese Word Span (.jp-word) */
+/* Clickable Japanese Word Link (.jp-word -> jpdb.io) */
 .jp-word {
+  color: inherit;
+  text-decoration: none;
   cursor: pointer;
   border-radius: 3px;
   padding: 0 1px;
@@ -914,9 +916,11 @@ body {
 }
 
 .jp-word:hover,
+.jp-word:active,
 .jp-word.active-word {
   background-color: #fde68a;
   border-bottom: 1.5px solid #b45309;
+  color: inherit;
 }
 
 /* Bottom Word Dictionary + jpdb.io Popup Bar */
