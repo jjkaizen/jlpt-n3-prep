@@ -883,15 +883,16 @@ body {
   border-color: #18181b;
 }
 
-/* Explanation Box (Shown after Grading) */
+/* Explanation & Process of Elimination Box (Shown after Grading) */
 .explanation-box {
-  margin-top: 0.65rem;
-  padding: 0.65rem 0.85rem;
+  margin-top: 0.75rem;
+  padding: 0.8rem 0.95rem;
   background: #f8fafc;
-  border-left: 4px solid #18181b;
-  font-size: 0.85rem;
-  color: #27272a;
-  border-radius: 0 6px 6px 0;
+  border: 1.5px solid #27272a;
+  border-left: 5px solid #18181b;
+  font-size: 0.86rem;
+  color: #18181b;
+  border-radius: 6px;
 }
 
 .explanation-box.is-correct {
@@ -902,6 +903,43 @@ body {
 .explanation-box.is-wrong {
   border-left-color: var(--fail);
   background: #fef2f2;
+}
+
+.elimination-list {
+  margin-top: 0.65rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed #a1a1aa;
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.elimination-title {
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  margin-bottom: 0.1rem;
+}
+
+.elimination-item {
+  padding: 0.42rem 0.6rem;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #d4d4d8;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.elimination-item.elim-correct {
+  border-color: #15803d;
+  background: #dcfce7;
+}
+
+.elimination-item.elim-user-wrong {
+  border-color: #b91c1c;
+  background: #fee2e2;
 }
 
 /* Clickable Japanese Word Link (.jp-word -> jpdb.io) */

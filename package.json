@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "google-tts-api": "^2.0.2",
     "kuromoji": "^0.1.2",
+    "msedge-tts": "^2.1.1",
     "vite": "^6.2.0"
   }
 }

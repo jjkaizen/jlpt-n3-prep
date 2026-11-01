@@ -335,6 +335,7 @@ for (const item of kanjiCandidates) {
       sentence: ex.ja.replace(item.word, `<u>${item.word}</u>`),
       target: item.word,
       reading: item.reading,
+      meanings: item.meanings,
       options,
       answer: ansIdx,
       explanation: `「${item.word}」 is read 「${item.reading}」 (${item.meanings.slice(0, 3).join('; ')}). Sentence: "${ex.en}"`
@@ -349,6 +350,7 @@ for (const item of kanjiCandidates) {
       sentence: ex.ja.replace(item.word, `<u>${item.reading}</u>`),
       target: item.reading,
       kanji: item.word,
+      meanings: item.meanings,
       options,
       answer: ansIdx,
       explanation: `「${item.reading}」 in this context is written as 「${item.word}」 (${item.meanings.slice(0, 3).join('; ')}). Sentence: "${ex.en}"`
@@ -398,12 +400,98 @@ for (let i = 0; i < contextCandidates.length && mondai3Pool.length < 170; i++) {
   mondai3Pool.push({
     sentence: ex.ja.replace(item.word, '（　　）'),
     options: optionObjs.map(o => o.word),
+    optionObjs,
     answer: ansIdx,
     explanation: `Correct: 「${item.word}（${item.reading}）」 (${item.meanings.slice(0, 3).join('; ')}). "${ex.en}" — Options: ${optionDetails}`
   });
 }
 
 console.log(`Generated Vocab Pools: Mondai1=${mondai1Pool.length}, Mondai2=${mondai2Pool.length}, Mondai3=${mondai3Pool.length}`);
+
+// Build reverse reading -> words lookup and grammar pattern lookup for Process of Elimination (消去法)
+const readingToWords = new Map();
+for (const lvl of ['n5', 'n4', 'n3', 'n2']) {
+  for (const v of allVocabByLevel[lvl]) {
+    if (v.reading && v.word !== v.reading) {
+      if (!readingToWords.has(v.reading)) readingToWords.set(v.reading, []);
+      readingToWords.get(v.reading).push(`${v.word} (${(v.meanings || []).slice(0, 2).join(', ')})`);
+    }
+  }
+}
+
+const grammarPatternNotes = new Map();
+for (const lvl of ['n5', 'n4', 'n3', 'n2']) {
+  const gPath = path.join(DATA_TMP, `grammar-${lvl}.json`);
+  if (fs.existsSync(gPath)) {
+    const glist = JSON.parse(fs.readFileSync(gPath, 'utf8'));
+    for (const g of glist) {
+      const cleanPat = (g.pattern || '')
+        .replace(/^.*?\+\s*/, '')
+        .replace(/[〜～()（）]/g, '')
+        .trim();
+      if (cleanPat && cleanPat.length >= 2) {
+        grammarPatternNotes.set(cleanPat, `${g.meaning_en} (${g.formation || lvl.toUpperCase()})`);
+      }
+    }
+  }
+}
+
+const extraGrammarGlossary = [
+  ['おかげで', 'thanks to (positive cause/outcome; cannot be used for bad outcomes)'],
+  ['せいで', 'because of / due to (blaming a negative outcome; clashes with positive results)'],
+  ['くせに', 'even though / despite (expresses criticism or contempt toward a person)'],
+  ['ために', 'in order to (purpose) OR because of (objective cause)'],
+  ['うちに', 'while still in that state / before a change happens'],
+  ['あいだに', 'during the time span when an event occurs'],
+  ['間は', 'throughout the entire period while a state continues'],
+  ['最中に', 'right in the middle/height of doing something when an interruption happens'],
+  ['たびに', 'every single time X happens (habitual/repeated occurrence)'],
+  ['ことになっている', 'it is an established rule, schedule, or official arrangement that...'],
+  ['ことにしている', 'I make it a personal habit/resolution to do...'],
+  ['ようになっている', 'is designed/structured so that... (system/mechanism)'],
+  ['ようにしている', 'trying/making an effort to do... regularly'],
+  ['わけではない', 'it does not mean that... / not necessarily all (partial negation)'],
+  ['とは限らない', 'is not always true / does not necessarily mean (exception to a generalization)'],
+  ['に違いない', 'must be / no doubt that (strong speaker conviction)'],
+  ['はずがない', 'cannot possibly be / impossible that (strong negative certainty)'],
+  ['しかない', 'have no choice but to do...'],
+  ['ことはない', 'there is no need to... (reassurance: 心配することはない)'],
+  ['べきだ', 'should / moral or logical obligation'],
+  ['っぱなし', 'leaving something undone/open/on improperly'],
+  ['ついでに', 'while incidentally doing something else on the way'],
+  ['たとたん', 'the very instant/moment an action completed, something unexpected happened'],
+  ['かわりに', 'instead of / in exchange for / to make up for'],
+  ['代わりに', 'instead of / in exchange for / to make up for'],
+  ['にもかかわらず', 'despite / in spite of (formal contrast)'],
+  ['に対して', 'in contrast to OR toward/regarding a target'],
+  ['に関して', 'regarding / concerning / related to (topic marker)'],
+  ['によって', 'by means of / depending on / due to / passive agent'],
+  ['にとって', 'from the standpoint of / for someone (evaluation)'],
+  ['に比べて', 'compared to'],
+  ['したがって', 'therefore / consequently (logical result of previous sentence)'],
+  ['それに対して', 'on the other hand / in contrast to that (contrasting two subjects)'],
+  ['つまり', 'in other words / to sum up (restating or concluding)'],
+  ['ところが', 'however / contrary to expectation (surprising reversal)'],
+  ['なぜなら', 'because / the reason is (always pairs with 〜からだ at sentence end)'],
+  ['しかも', 'moreover / furthermore (adding a second point in the same direction)'],
+  ['そこで', 'so / therefore (taking purposeful action in response to a situation)'],
+  ['すると', 'thereupon / and right then (automatic sequence or discovery)'],
+  ['ただし', 'however / provided that (adds a condition or exception to the rule)'],
+  ['なお', 'furthermore / please note that (adds supplemental administrative info)'],
+  ['たとえば', 'for example (introduces a concrete illustration)'],
+  ['それとも', 'or else (choosing between alternatives in a question)'],
+  ['それでも', 'even so / nevertheless'],
+  ['だからといって', 'just because... does not mean that...'],
+  ['ば〜ほど', 'the more X, the more Y (proportional change)'],
+  ['くらいなら', 'rather than doing X (unacceptable option), I would rather...'],
+  ['てたまらない', 'unbearably / extremely (intense spontaneous feeling)'],
+  ['ずにはいられない', 'cannot help doing / cannot resist'],
+  ['かねない', 'might well happen (risk of a negative outcome)'],
+  ['恐れがある', 'there is a danger/fear that (formal warning)']
+];
+for (const [k, v] of extraGrammarGlossary) {
+  grammarPatternNotes.set(k, v);
+}
 
 // 3. Build Kuromoji Tokenizer to pre-tokenize and index every word used across all 34 exams!
 console.log('Initializing Kuromoji morphological analyzer...');
@@ -569,7 +657,160 @@ function indexText(text) {
   }
 }
 
-// 4. Assemble the 34 Daily 1-Hour Scaled JLPT N3 Papers (Mon Nov 2, 2026 -> Sat Dec 5, 2026)
+// Helper to summarize content words in a Japanese phrase/option for Process of Elimination
+function summarizeOptionWords(text, excludeWord = '') {
+  const plain = String(text || '').replace(/<\/?u>/g, '');
+  if (!plain) return '';
+  const direct = lookupEntryWithFallbacks(plain, plain);
+  if (direct && direct.m && !direct.m.startsWith('Tap ')) {
+    return `${plain}（${direct.r}）= "${direct.m}"`;
+  }
+  const tokens = tokenizer.tokenize(plain);
+  const parts = [];
+  const seen = new Set();
+  for (const t of tokens) {
+    if (t.pos === '記号' || t.pos === '助詞' || t.pos === '助動詞') continue;
+    const base = t.basic_form && t.basic_form !== '*' ? t.basic_form : t.surface_form;
+    if (base === excludeWord || t.surface_form === excludeWord || seen.has(base)) continue;
+    const entry = lookupEntryWithFallbacks(t.surface_form, base);
+    if (entry && entry.m && !entry.m.startsWith('Tap ')) {
+      seen.add(base);
+      parts.push(`${base}（${entry.r}）= "${entry.m.split(';')[0]}"`);
+    }
+    if (parts.length >= 3) break;
+  }
+  return parts.join(', ');
+}
+
+function findGrammarNote(optText) {
+  const clean = String(optText || '').trim();
+  if (grammarPatternNotes.has(clean)) return grammarPatternNotes.get(clean);
+  for (const [k, v] of grammarPatternNotes.entries()) {
+    if (clean.includes(k) || k.includes(clean)) return v;
+  }
+  const gloss = summarizeOptionWords(clean);
+  return gloss || null;
+}
+
+function buildOptionReasons(q, meta = {}) {
+  return q.options.map((opt, idx) => {
+    const isCorrect = idx === q.answer;
+    const rightOpt = q.options[q.answer];
+
+    // 1. 問題1 漢字読み (Kanji Reading)
+    if (q.mondaiId === 'v-m1') {
+      if (isCorrect) {
+        return `✓ CORRECT: 「${q.targetWord}」 is read 「${opt}」 (${(meta.meanings || []).slice(0, 3).join('; ')}).`;
+      }
+      const issues = [];
+      if (opt.length !== rightOpt.length) {
+        issues.push(
+          opt.length > rightOpt.length
+            ? `adds an extra vowel/mora（「${opt}」 vs correct 「${rightOpt}」 — long-vowel trap）`
+            : `drops a vowel/mora（「${opt}」 vs correct 「${rightOpt}」 — short-vowel trap）`
+        );
+      }
+      if (opt.includes('っ') !== rightOpt.includes('っ')) {
+        issues.push(`confuses the geminate double consonant っ（「${opt}」 vs 「${rightOpt}」）`);
+      }
+      if (issues.length === 0) {
+        issues.push(`phonological voicing (濁音/清音) or on'yomi reading trap for 「${q.targetWord}」 (correct reading is 「${rightOpt}」)`);
+      }
+      const otherMatches = (readingToWords.get(opt) || []).filter(w => !w.startsWith(q.targetWord));
+      const homophoneNote = otherMatches.length
+        ? ` Note: 「${opt}」 is the reading for ${otherMatches.slice(0, 2).join(' / ')}.`
+        : '';
+      return `✗ ELIMINATED: ${issues.join('; ')}.${homophoneNote}`;
+    }
+
+    // 2. 問題2 表記 (Orthography / Kana -> Kanji)
+    if (q.mondaiId === 'v-m2') {
+      const kBreakdown = [...opt]
+        .map(ch => {
+          const ki = kanjiMap.get(ch);
+          return ki ? `${ch} (${(ki.meanings || []).slice(0, 2).join('/')})` : ch;
+        })
+        .join(' + ');
+      if (isCorrect) {
+        return `✓ CORRECT: 「${q.targetWord}」 is written 「${opt}」 [${kBreakdown}].`;
+      }
+      const wrongChars = [];
+      for (let c = 0; c < opt.length; c++) {
+        if (opt[c] !== rightOpt[c]) {
+          const wInfo = kanjiMap.get(opt[c]);
+          const rInfo = kanjiMap.get(rightOpt[c]);
+          wrongChars.push(
+            `uses 「${opt[c]}」 (${(wInfo?.meanings || ['different kanji']).slice(0, 2).join('/')}) instead of 「${rightOpt[c]}」 (${(rInfo?.meanings || []).slice(0, 2).join('/')})`
+          );
+        }
+      }
+      return `✗ ELIMINATED: Homophone / lookalike kanji trap — ${wrongChars.join(' and ')} [${kBreakdown}].`;
+    }
+
+    // 3. 問題3 文脈規定 & 問題4 言い換え類義
+    if (q.mondaiId === 'v-m3' || q.mondaiId === 'v-m4') {
+      const optObj = meta.optionObjs?.[idx];
+      const gloss = optObj
+        ? `「${optObj.word}（${optObj.reading}）」 = "${optObj.meanings.slice(0, 3).join('; ')}"`
+        : summarizeOptionWords(opt) || `「${opt}」`;
+      if (isCorrect) {
+        return `✓ CORRECT: ${gloss} — fits the exact meaning required here.`;
+      }
+      return `✗ ELIMINATED: ${gloss} — does not match the meaning/context of the sentence.`;
+    }
+
+    // 4. 問題5 用法 (Word Usage in Context)
+    if (q.mondaiId === 'v-m5') {
+      const contextGloss = summarizeOptionWords(opt, meta.word);
+      if (isCorrect) {
+        return `✓ CORRECT USAGE: Uses 「${meta.word}（${meta.reading} = ${meta.meaning}）」 in its natural collocation${
+          contextGloss ? ` (${contextGloss})` : ''
+        }.`;
+      }
+      return `✗ ELIMINATED: Unnatural collocation for 「${meta.word}（${meta.meaning}）」 in this clause${
+        contextGloss ? ` [Context words: ${contextGloss}]` : ''
+      } — violates the usage restriction explained below.`;
+    }
+
+    // 5. 文法 問題1 (Sentence Grammar) & 問題3 (Cloze Grammar)
+    if (q.mondaiId === 'g-m1' || q.mondaiId === 'g-m3') {
+      const gNote = findGrammarNote(opt);
+      if (isCorrect) {
+        return `✓ CORRECT: 「${opt}」${gNote ? ` (${gNote})` : ''} matches both the grammatical connection and the sentence logic.`;
+      }
+      return `✗ ELIMINATED: 「${opt}」${
+        gNote ? ` means "${gNote}"` : ''
+      } — clashes with the sentence's grammar attachment, register, or cause/effect direction.`;
+    }
+
+    // 6. 文法 問題2 ★ 文の組み立て (Star Sentence Scramble)
+    if (q.mondaiId === 'g-m2') {
+      const slotPos = (q.correctOrder || []).indexOf(idx) + 1;
+      const orderedText = (q.correctOrder || []).map(i => q.options[i]).join(' → ');
+      if (isCorrect) {
+        return `✓ CORRECT (Lands in ★ Slot ${q.starPosition}): Full order is [${orderedText}], placing 「${opt}」 squarely in Slot ${q.starPosition}.`;
+      }
+      return `✗ ELIMINATED (Belongs in Slot ${slotPos}, NOT ★ Slot ${q.starPosition}): In the correct order [${orderedText}], 「${opt}」 must go in position ${slotPos} to satisfy Japanese modifier/particle syntax.`;
+    }
+
+    // 7. 読解 (Reading) & 聴解 (Listening)
+    const optTerms = summarizeOptionWords(opt);
+    const refText = String(q.passageText || '') + ' ' + String(q.passageNotes || '') + ' ' + (q.dialogue || []).map(d => d.text).join(' ');
+    const tokens = tokenizer.tokenize(opt).filter(t => t.pos === '名詞' || t.pos === '動詞' || t.pos === '形容詞');
+    const matchedKeywords = tokens.filter(t => t.surface_form.length >= 2 && refText.includes(t.surface_form)).map(t => t.surface_form);
+
+    if (isCorrect) {
+      return `✓ CORRECT: Accurately paraphrases the main point / condition in the text${
+        optTerms ? ` [Key terms: ${optTerms}]` : ''
+      }.`;
+    }
+    const trapLabel =
+      matchedKeywords.length > 0
+        ? `Keyword-Bait Trap (reuses 「${[...new Set(matchedKeywords)].slice(0, 2).join('・')}」 from the text, but twists the condition/reason/timing)`
+        : `Contradicts or is not stated in the passage/dialogue`;
+    return `✗ ELIMINATED — ${trapLabel}${optTerms ? ` [Option vocabulary: ${optTerms}]` : ''}.`;
+  });
+}
 const DAYS_COUNT = 34;
 const START_DATE = new Date('2026-11-02T00:00:00Z');
 const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -607,7 +848,7 @@ for (let d = 0; d < DAYS_COUNT; d++) {
 
   // SECTION 1: 文字・語彙 (15 Qs: Q1..Q15)
   for (const item of m1Items) {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'vocab',
       mondaiId: 'v-m1',
@@ -618,10 +859,12 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: item.options,
       answer: item.answer,
       explanation: item.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, item);
+    questions.push(q);
   }
   for (const item of m2Items) {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'vocab',
       mondaiId: 'v-m2',
@@ -631,10 +874,12 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: item.options,
       answer: item.answer,
       explanation: item.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, item);
+    questions.push(q);
   }
   for (const item of m3Items) {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'vocab',
       mondaiId: 'v-m3',
@@ -643,10 +888,12 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: item.options,
       answer: item.answer,
       explanation: item.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, item);
+    questions.push(q);
   }
   for (const item of m4Items) {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'vocab',
       mondaiId: 'v-m4',
@@ -656,10 +903,12 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: item.options,
       answer: item.answer,
       explanation: item.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, item);
+    questions.push(q);
   }
   for (const item of m5Items) {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'vocab',
       mondaiId: 'v-m5',
@@ -668,12 +917,14 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: item.options,
       answer: item.answer,
       explanation: item.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, item);
+    questions.push(q);
   }
 
   // SECTION 2 PART A: 文法 (10 Qs: Q16..Q25)
   for (const item of g1Items) {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'grammar',
       mondaiId: 'g-m1',
@@ -682,10 +933,12 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: item.options,
       answer: item.answer,
       explanation: item.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, item);
+    questions.push(q);
   }
   for (const item of g2Items) {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'grammar',
       mondaiId: 'g-m2',
@@ -699,11 +952,13 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: item.options,
       answer: item.answer,
       explanation: item.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, item);
+    questions.push(q);
   }
   // 問題3 文章の文法 (Cloze passage: Q23, Q24, Q25)
   clozeItem.questions.forEach((cq, idx) => {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'grammar',
       mondaiId: 'g-m3',
@@ -714,13 +969,15 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: cq.options,
       answer: cq.answer,
       explanation: cq.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, cq);
+    questions.push(q);
   });
 
   // SECTION 2 PART B: 読解 (8 Qs: Q26..Q33)
   // 問題4 短文 (2 passages: Q26, Q27)
   shortItems.forEach((sp, idx) => {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'reading',
       mondaiId: 'r-m4',
@@ -734,12 +991,14 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: sp.options,
       answer: sp.answer,
       explanation: sp.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, sp);
+    questions.push(q);
   });
 
   // 問題5 中文 (1 passage, 2 Qs: Q28, Q29)
   midItem.questions.forEach((mq, idx) => {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'reading',
       mondaiId: 'r-m5',
@@ -751,12 +1010,14 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: mq.options,
       answer: mq.answer,
       explanation: mq.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons({ ...q, passageText: midItem.passage }, mq);
+    questions.push(q);
   });
 
   // 問題6 長文 (1 passage, 2 Qs: Q30, Q31)
   longItem.questions.forEach((lq, idx) => {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'reading',
       mondaiId: 'r-m6',
@@ -768,12 +1029,14 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: lq.options,
       answer: lq.answer,
       explanation: lq.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons({ ...q, passageText: longItem.passage }, lq);
+    questions.push(q);
   });
 
   // 問題7 情報検索 (1 flyer + table, 2 Qs: Q32, Q33)
   infoItem.questions.forEach((iq, idx) => {
-    questions.push({
+    const q = {
       qNum: qNum++,
       section: 'reading',
       mondaiId: 'r-m7',
@@ -787,23 +1050,29 @@ for (let d = 0; d < DAYS_COUNT; d++) {
       options: iq.options,
       answer: iq.answer,
       explanation: iq.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons({ ...q, passageText: infoItem.intro, passageNotes: infoItem.notes }, iq);
+    questions.push(q);
   });
 
   // SECTION 3: 聴解 (7 Qs: Q34..Q40)
   listeningItems.forEach(lq => {
-    questions.push({
-      qNum: qNum++,
+    const curQNum = qNum++;
+    const q = {
+      qNum: curQNum,
       section: 'listening',
       mondaiId: `l-${lq.mondai.slice(0, 3)}`,
       mondaiTitle: `聴解 ${lq.mondai}　音声を聞いて、最もよいものを一つ選びなさい。`,
+      audioFile: `./audio/d${d + 1}-q${curQNum}.mp3`,
       listeningIntro: lq.intro,
       dialogue: lq.dialogue,
       prompt: lq.question,
       options: lq.options,
       answer: lq.answer,
       explanation: lq.explanation
-    });
+    };
+    q.optionReasons = buildOptionReasons(q, lq);
+    questions.push(q);
   });
 
   // Index all text in this day's exam for our offline dictionary bundle

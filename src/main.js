@@ -204,7 +204,30 @@ function getRecommendedDayNum() {
   return examsData.length;
 }
 
-// Timer Management
+// Timer Management (100% Automatic: pauses when leaving tab/app or closing browser, resumes on return)
+let currentAudioEl = null;
+
+function isTabActivelyFocused() {
+  return !document.hidden && document.hasFocus();
+}
+
+function updateTimerBadgeDom() {
+  if (!appState.currentExamDay) return;
+  const cur = getDayState(appState.currentExamDay);
+  const timerEl = document.getElementById('live-timer-val');
+  const boxEl = document.getElementById('live-timer-box');
+  if (timerEl) {
+    timerEl.textContent = formatTime(cur.remainingSeconds);
+  }
+  if (boxEl) {
+    if (appState.timerPaused) {
+      boxEl.classList.add('paused');
+    } else {
+      boxEl.classList.remove('paused');
+    }
+  }
+}
+
 function startExamTimer(dayNum) {
   stopExamTimer();
   const st = getDayState(dayNum);
@@ -213,9 +236,22 @@ function startExamTimer(dayNum) {
     st.status = 'in_progress';
     saveStore();
   }
-  appState.timerPaused = false;
+  appState.timerPaused = !isTabActivelyFocused();
   appState.timerInterval = setInterval(() => {
-    if (appState.activeTab !== 'exam' || appState.timerPaused || !appState.currentExamDay) return;
+    if (appState.activeTab !== 'exam' || !appState.currentExamDay) return;
+    const activeNow = isTabActivelyFocused();
+    if (!activeNow) {
+      if (!appState.timerPaused) {
+        appState.timerPaused = true;
+        saveStore();
+        updateTimerBadgeDom();
+      }
+      return;
+    }
+    if (appState.timerPaused) {
+      appState.timerPaused = false;
+      updateTimerBadgeDom();
+    }
     const cur = getDayState(appState.currentExamDay);
     if (cur.status === 'completed') {
       stopExamTimer();
@@ -223,10 +259,7 @@ function startExamTimer(dayNum) {
     }
     if (cur.remainingSeconds > 0) {
       cur.remainingSeconds--;
-      const timerEl = document.getElementById('live-timer-val');
-      if (timerEl) {
-        timerEl.textContent = formatTime(cur.remainingSeconds);
-      }
+      updateTimerBadgeDom();
       if (cur.remainingSeconds % 5 === 0) {
         saveStore();
       }
@@ -242,14 +275,50 @@ function stopExamTimer() {
   saveStore();
 }
 
-// Auto-save & pause timer if page becomes hidden (e.g. phone screen locked)
+function stopAllAudio() {
+  if (currentAudioEl) {
+    currentAudioEl.pause();
+    currentAudioEl.currentTime = 0;
+    currentAudioEl = null;
+  }
+  appState.playingQuestion = null;
+}
+
+// Automatically pause & save timer immediately when switching tabs (e.g. jpdb.io), locking phone, or closing browser
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    appState.timerPaused = true;
     saveStore();
+    updateTimerBadgeDom();
+  } else if (appState.activeTab === 'exam' && appState.currentExamDay) {
+    appState.timerPaused = false;
+    updateTimerBadgeDom();
   }
 });
 
-// Web Audio Chime + Web Speech API Listening Player
+window.addEventListener('blur', () => {
+  appState.timerPaused = true;
+  saveStore();
+  updateTimerBadgeDom();
+});
+
+window.addEventListener('focus', () => {
+  if (!document.hidden && appState.activeTab === 'exam' && appState.currentExamDay) {
+    appState.timerPaused = false;
+    updateTimerBadgeDom();
+  }
+});
+
+window.addEventListener('pagehide', () => {
+  appState.timerPaused = true;
+  saveStore();
+});
+
+window.addEventListener('beforeunload', () => {
+  saveStore();
+});
+
+// Web Audio Chime + Pre-generated MP3 Dialogue Player
 function playExamChime() {
   return new Promise(resolve => {
     try {
@@ -282,65 +351,46 @@ function playExamChime() {
 }
 
 async function togglePlayListeningQuestion(q) {
-  if (!('speechSynthesis' in window)) {
-    appState.openTranscripts[q.qNum] = true;
-    renderApp();
-    alert(
-      'Japanese Text-to-Speech is not installed on this browser/device. The dialogue transcript has been opened below so you can read and tap any word!'
-    );
-    return;
-  }
-
   if (appState.playingQuestion === q.qNum) {
-    window.speechSynthesis.cancel();
-    appState.playingQuestion = null;
+    stopAllAudio();
     renderApp();
     return;
   }
 
-  window.speechSynthesis.cancel();
+  stopAllAudio();
   appState.playingQuestion = q.qNum;
   renderApp();
 
   await playExamChime();
   if (appState.playingQuestion !== q.qNum) return;
 
-  const sequence = [
-    { text: q.listeningIntro, pitch: 1.0, rate: 0.95 },
-    ...(q.dialogue || []).map(d => ({
-      text: d.text,
-      pitch: d.speaker === 'M' ? 0.8 : 1.2,
-      rate: 0.96
-    })),
-    { text: q.prompt, pitch: 1.0, rate: 0.95 }
-  ];
+  const audioSrc = q.audioFile || `./audio/d${appState.currentExamDay}-q${q.qNum}.mp3`;
+  const audio = new Audio(audioSrc);
+  currentAudioEl = audio;
 
-  const voices = window.speechSynthesis.getVoices();
-  const jaVoice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith('ja'));
-
-  let idx = 0;
-  const speakNext = () => {
-    if (appState.playingQuestion !== q.qNum || idx >= sequence.length) {
+  audio.onended = () => {
+    if (appState.playingQuestion === q.qNum) {
       appState.playingQuestion = null;
+      currentAudioEl = null;
       renderApp();
-      return;
     }
-    const item = sequence[idx++];
-    const utter = new SpeechSynthesisUtterance(item.text);
-    utter.lang = 'ja-JP';
-    if (jaVoice) utter.voice = jaVoice;
-    utter.pitch = item.pitch;
-    utter.rate = item.rate;
-    utter.onend = () => setTimeout(speakNext, 450);
-    utter.onerror = () => {
-      appState.playingQuestion = null;
-      appState.openTranscripts[q.qNum] = true;
-      renderApp();
-    };
-    window.speechSynthesis.speak(utter);
   };
 
-  speakNext();
+  audio.onerror = () => {
+    appState.playingQuestion = null;
+    currentAudioEl = null;
+    appState.openTranscripts[q.qNum] = true;
+    renderApp();
+  };
+
+  try {
+    await audio.play();
+  } catch {
+    appState.playingQuestion = null;
+    currentAudioEl = null;
+    appState.openTranscripts[q.qNum] = true;
+    renderApp();
+  }
 }
 
 // Render Screen 1: Daily Exam List (Nov 2 -> Dec 6)
@@ -597,11 +647,12 @@ function renderExamPaperScreen() {
       `;
     }
 
-    // Listening Audio Box
+    // Listening Audio Box (Real Pre-Generated Japanese Neural MP3 Audio)
     let listeningBoxHtml = '';
     if (q.section === 'listening') {
       const isPlaying = appState.playingQuestion === q.qNum;
       const showScript = isCompleted || !!appState.openTranscripts[q.qNum];
+      const audioSrc = q.audioFile || `./audio/d${exam.day}-q${q.qNum}.mp3`;
       const dialogueRows = (q.dialogue || [])
         .map(
           line => `
@@ -622,8 +673,9 @@ function renderExamPaperScreen() {
             <button class="btn-audio ${isPlaying ? 'playing' : ''}" data-action="play-audio" data-qnum="${
               q.qNum
             }">
-              ${isPlaying ? '⏹ 音声を停止 (Stop Audio)' : '▶ 音声を再生 (Play Dialogue)'}
+              ${isPlaying ? '⏹ 音声を停止 (Stop Audio)' : '▶ 会話音声を再生 (Play Dialogue MP3)'}
             </button>
+            <audio controls preload="none" src="${esc(audioSrc)}" style="height:32px; max-width:240px;"></audio>
             <button class="btn-secondary" data-action="toggle-script" data-qnum="${q.qNum}">
               ${showScript ? 'スクリプトを隠す (Hide Text)' : '📖 スクリプトを見る (Show Dialogue Text)'}
             </button>
@@ -741,10 +793,47 @@ function renderExamPaperScreen() {
     let explanationHtml = '';
     if (isCompleted) {
       const isRight = picked === q.answer;
+      const reasons = q.optionReasons || [];
+      const eliminationRows = q.options
+        .map((optText, idx) => {
+          const isAns = idx === q.answer;
+          const isUserWrong = picked === idx && !isAns;
+          const itemClass = isAns ? 'elim-correct' : isUserWrong ? 'elim-user-wrong' : '';
+          const userTag = isUserWrong
+            ? ` <span class="badge badge-fail" style="margin-left:0.35rem;">✗ Your Pick</span>`
+            : isAns && picked === idx
+            ? ` <span class="badge badge-pass" style="margin-left:0.35rem;">✓ Your Pick</span>`
+            : '';
+          const reasonText = reasons[idx] || (isAns ? '✓ Correct choice.' : '✗ Distractor.');
+          return `
+            <div class="elimination-item ${itemClass}">
+              <div>
+                <b>Choice ${idx + 1}: 「${esc(optText.replace(/<\/?u>/g, ''))}」</b>${userTag}
+              </div>
+              <div style="margin-top:0.15rem; color:#27272a;">
+                ${esc(reasonText)}
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
       explanationHtml = `
         <div class="explanation-box ${isRight ? 'is-correct' : 'is-wrong'}">
-          <b>${isRight ? '✓ Correct (正解)' : `✗ Incorrect — Correct Answer: Choice ${q.answer + 1}`}</b><br/>
-          ${esc(q.explanation)}
+          <div style="font-size:0.92rem; margin-bottom:0.35rem;">
+            <b>${
+              isRight
+                ? `✓ Correct (正解：選択肢 ${q.answer + 1})`
+                : picked !== undefined
+                ? `✗ Incorrect (You picked ${picked + 1} · Correct Answer: Choice ${q.answer + 1})`
+                : `✗ Unanswered (Correct Answer: Choice ${q.answer + 1})`
+            }</b>
+          </div>
+          <div>${esc(q.explanation)}</div>
+          <div class="elimination-list">
+            <div class="elimination-title">🔍 Process of Elimination (消去法 — Why 1–4 Are Right or Wrong):</div>
+            ${eliminationRows}
+          </div>
         </div>
       `;
     }
@@ -861,15 +950,12 @@ function renderExamPaperScreen() {
         ${
           !isCompleted
             ? `
-          <div class="timer-box ${appState.timerPaused ? 'paused' : ''} ${
+          <div id="live-timer-box" class="timer-box ${appState.timerPaused ? 'paused' : ''} ${
                 st.remainingSeconds < 300 ? 'urgent' : ''
-              }">
+              }" title="Timer automatically pauses when you switch tabs or close the browser">
             <span>⏱</span>
             <span id="live-timer-val">${formatTime(st.remainingSeconds)}</span>
           </div>
-          <button class="btn-secondary" data-action="toggle-pause">
-            ${appState.timerPaused ? '▶ Resume' : '⏸ Pause'}
-          </button>
         `
             : `<span class="badge badge-pass">Graded · Review Mode</span>`
         }
@@ -1333,8 +1419,7 @@ document.addEventListener('click', event => {
   if (action === 'switch-tab') {
     const tab = actionEl.getAttribute('data-tab');
     stopExamTimer();
-    window.speechSynthesis?.cancel();
-    appState.playingQuestion = null;
+    stopAllAudio();
     appState.activeWordPopup = null;
     appState.activeTab = tab;
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1365,8 +1450,7 @@ document.addEventListener('click', event => {
 
   if (action === 'pause-and-exit') {
     stopExamTimer();
-    window.speechSynthesis?.cancel();
-    appState.playingQuestion = null;
+    stopAllAudio();
     appState.activeWordPopup = null;
     appState.activeTab = 'daily';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1487,8 +1571,7 @@ document.addEventListener('click', event => {
       if (!ok) return;
     }
     stopExamTimer();
-    window.speechSynthesis?.cancel();
-    appState.playingQuestion = null;
+    stopAllAudio();
     st.status = 'completed';
     st.score = computeExamScore(exam, st.answers);
     st.completedAt = new Date().toISOString();
