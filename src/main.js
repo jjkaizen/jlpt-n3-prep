@@ -105,11 +105,20 @@ function getDayState(dayNum) {
       status: 'not_started',
       answers: {},
       starSlots: {},
-      remainingSeconds: 3600,
+      remainingSeconds: 1800,
       lastQuestion: 1,
       score: null,
       completedAt: null
     };
+  } else {
+    const st = appState.store.days[dayNum];
+    if (st.remainingSeconds > 1800) st.remainingSeconds = 1800;
+    if (st.lastQuestion > 20) st.lastQuestion = 1;
+    if (st.answers) {
+      for (const k of Object.keys(st.answers)) {
+        if (Number(k) > 20) delete st.answers[k];
+      }
+    }
   }
   return appState.store.days[dayNum];
 }
@@ -133,8 +142,8 @@ function computeExamScore(exam, answers) {
       if (isCorrect) langRaw++;
     } else if (q.section === 'reading') {
       readTotal++;
-      const weight =
-        q.mondaiId === 'r-m4' ? 6 : q.mondaiId === 'r-m5' ? 7 : q.mondaiId === 'r-m6' ? 9 : 8;
+      // 4 reading questions weighted to 60 pts: Short(12) + Essay Q1(16) + Essay Q2(16) + Info(16) = 60
+      const weight = q.mondaiId === 'r-m4' ? 12 : 16;
       if (isCorrect) {
         readRaw++;
         readWeighted += weight;
@@ -483,7 +492,7 @@ function renderDailyListScreen() {
     </button>`;
   } else {
     heroActionBtn = `<button class="btn-primary" data-action="open-exam" data-day="${recExam.day}">
-      ▶ Start ${appState.level} Day ${recExam.day} Paper (${recExam.labelEn} · 60 min)
+      ▶ Start ${appState.level} Day ${recExam.day} Paper (${recExam.labelEn} · 30 min)
     </button>`;
   }
 
@@ -494,9 +503,9 @@ function renderDailyListScreen() {
       const pct = Math.round((answeredCount / exam.totalQuestions) * 100);
       const isCurrent = exam.day === recDayNum;
 
-      let badgeHtml = `<span class="badge badge-not-started">Not Started · 60:00</span>`;
-      let scoreSummaryHtml = `<span>40 Questions (Vocab 15 · Grammar 10 · Reading 8 · Listening 7)</span>`;
-      let actionButtonsHtml = `<button class="btn-primary" data-action="open-exam" data-day="${exam.day}">Start 1h Paper</button>`;
+      let badgeHtml = `<span class="badge badge-not-started">Not Started · 30:00</span>`;
+      let scoreSummaryHtml = `<span>20 Questions (Vocab 7 · Grammar 5 · Reading 4 · Listening 4)</span>`;
+      let actionButtonsHtml = `<button class="btn-primary" data-action="open-exam" data-day="${exam.day}">Start 30m Paper</button>`;
 
       if (st.status === 'in_progress') {
         badgeHtml = `<span class="badge badge-progress">In Progress · ${answeredCount}/${exam.totalQuestions} Answered · ${formatTime(
@@ -555,10 +564,10 @@ function renderDailyListScreen() {
     <div class="hero-banner">
       <div class="hero-top">
         <div>
-          <span class="hero-eyebrow">NEXT UP · 1-HOUR SCALED JLPT ${appState.level} EXAM</span>
+          <span class="hero-eyebrow">NEXT UP · 30-MINUTE SCALED JLPT ${appState.level} EXAM</span>
           <h1 class="hero-title">${appState.level} Day ${recExam.day}: ${esc(recExam.labelEn)}（${esc(recExam.labelJa)}）</h1>
           <p class="hero-desc">
-            Start and stop whenever you want (morning, lunch, evening). Timer auto-pauses when you leave the tab. Tap any Japanese word to open it in <b>jpdb.io</b>.
+            20 exam-style questions in 30 minutes. Start and stop whenever you want—timer auto-pauses when you leave the tab. Tap any Japanese word to open it in <b>jpdb.io</b>.
           </p>
         </div>
         <div style="display:flex; flex-direction:column; gap:0.45rem; align-items:flex-end;">
@@ -624,19 +633,19 @@ function renderExamPaperScreen() {
   const sectionHeaders = {
     vocab: {
       title: '第1部：言語知識（文字・語彙）',
-      meta: '目安時間：15分（全15問 · Q1〜Q15）'
+      meta: '目安時間：7分（全7問 · Q1〜Q7）'
     },
     grammar: {
       title: '第2部：言語知識（文法）・読解 【文法】',
-      meta: '目安時間：10分（全10問 · Q16〜Q25）'
+      meta: '目安時間：5分（全5問 · Q8〜Q12）'
     },
     reading: {
       title: '第2部：言語知識（文法）・読解 【読解】',
-      meta: '目安時間：20分（全8問 · Q26〜Q33）'
+      meta: '目安時間：10分（全4問 · Q13〜Q16）'
     },
     listening: {
       title: '第3部：聴解（リスニング）',
-      meta: '目安時間：15分（全7問 · Q34〜Q40）'
+      meta: '目安時間：8分（全4問 · Q17〜Q20）'
     }
   };
 
@@ -950,10 +959,10 @@ function renderExamPaperScreen() {
           <b style="font-size:0.86rem;">Question Navigator (Tap to Jump · Progress Saved Automatically)</b>
           <button class="btn-secondary" style="padding:0.2rem 0.55rem;" data-action="toggle-jump-drawer">Close ✕</button>
         </div>
-        ${renderJumpRange('第1部：文字・語彙 (Vocabulary · Q1–Q15 · ~15m)', 1, 15)}
-        ${renderJumpRange('第2部：文法 (Grammar · Q16–Q25 · ~10m)', 16, 25)}
-        ${renderJumpRange('第2部：読解 (Reading · Q26–Q33 · ~20m)', 26, 33)}
-        ${renderJumpRange('第3部：聴解 (Listening · Q34–Q40 · ~15m)', 34, 40)}
+        ${renderJumpRange('第1部：文字・語彙 (Vocabulary · Q1–Q7 · ~7m)', 1, 7)}
+        ${renderJumpRange('第2部：文法 (Grammar · Q8–Q12 · ~5m)', 8, 12)}
+        ${renderJumpRange('第2部：読解 (Reading · Q13–Q16 · ~10m)', 13, 16)}
+        ${renderJumpRange('第3部：聴解 (Listening · Q17–Q20 · ~8m)', 17, 20)}
       </div>
     `;
   }
@@ -1049,7 +1058,7 @@ function renderExamPaperScreen() {
 
     <div class="exam-booklet">
       <div class="booklet-cover-banner">
-        <div class="b-series">2026年12月6日対策 · 1時間短縮実戦模試（第${exam.day}回 / 全34回）</div>
+        <div class="b-series">2026年12月6日対策 · 30分短縮実戦模試（第${exam.day}回 / 全34回 · 全20問）</div>
         <div class="b-level">日本語能力試験 ${appState.level}（${esc(exam.labelJa)}）</div>
         <div class="b-meta">
           💡 <b>Tap any Japanese word</b> in the passages, questions, or choices to open it directly in <b>jpdb.io</b>. Tap the numbered circle <b>(1–4)</b> to choose your answer.
@@ -1217,7 +1226,7 @@ function renderScoreProgressScreen() {
           .reverse()
           .map(({ exam, state }) => {
             const sc = state.score;
-            const timeSpent = formatTime(3600 - (state.remainingSeconds || 0));
+            const timeSpent = formatTime(1800 - Math.min(1800, state.remainingSeconds || 0));
             return `
               <tr>
                 <td><b>${appState.level} Day ${exam.day}</b> (${esc(exam.labelJa)})</td>
@@ -1394,7 +1403,7 @@ function renderApp() {
             }" data-action="switch-level" data-level="N4">N4</button>
           </div>
           <div style="cursor:pointer;" data-action="switch-tab" data-tab="daily">
-            <div class="brand-title">JLPT ${appState.level} · 1-Hour Daily Exam</div>
+            <div class="brand-title">JLPT ${appState.level} · 30-Min Daily Exam</div>
             <div class="brand-sub">Mon 2 Nov – Sun 6 Dec 2026 · Tap any word for jpdb.io</div>
           </div>
         </div>

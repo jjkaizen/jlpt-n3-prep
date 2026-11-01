@@ -850,27 +850,33 @@ function assembleExamsForLevel(cfg) {
     const dowEn = WEEKDAYS_EN[dateObj.getUTCDay()];
     const dowJa = WEEKDAYS_JA[dateObj.getUTCDay()];
 
-    const m1Items = cfg.m1Pool.slice(d * 3, d * 3 + 3);
-    const m2Items = cfg.m2Pool.slice(d * 3, d * 3 + 3);
-    const m3Items = cfg.m3Pool.slice(d * 5, d * 5 + 5);
-    const m4Items = cfg.synonyms.slice(d * 2, d * 2 + 2);
-    const m5Items = cfg.usages.slice(d * 2, d * 2 + 2);
+    // 30-Minute Scaled Paper (20 Questions Total)
+    // Section 1: Vocab (7 Qs: 2 m1, 1 m2, 2 m3, 1 m4, 1 m5)
+    const m1Items = cfg.m1Pool.slice(d * 2, d * 2 + 2);
+    const m2Items = cfg.m2Pool.slice(d, d + 1);
+    const m3Items = cfg.m3Pool.slice(d * 2, d * 2 + 2);
+    const m4Items = cfg.synonyms.slice(d, d + 1);
+    const m5Items = cfg.usages.slice(d, d + 1);
 
-    const g1Items = cfg.grammarSentences.slice(d * 5, d * 5 + 5);
-    const g2Items = cfg.stars.slice(d * 2, d * 2 + 2);
+    // Section 2A: Grammar (5 Qs: 3 g1, 1 star, 1 cloze)
+    const g1Items = cfg.grammarSentences.slice(d * 3, d * 3 + 3);
+    const g2Items = cfg.stars.slice(d, d + 1);
     const clozeItem = cfg.clozes[d];
 
-    const shortItems = cfg.shorts.slice(d * 2, d * 2 + 2);
-    const midItem = cfg.mediums[d];
-    const longItem = cfg.longs[d];
+    // Section 2B: Reading (4 Qs: 1 short, 1 mid/long essay with 2 Qs, 1 info retrieval with 1 Q)
+    const shortItem = cfg.shorts[d];
+    const useLongToday = d % 2 === 1;
+    const essayItem = useLongToday ? cfg.longs[d] : cfg.mediums[d];
     const infoItem = cfg.infos[d];
 
-    const listeningItems = cfg.listeningSets[d];
+    // Section 3: Listening (4 Qs from the 7 pre-generated daily audio items: indices 0, 2, 4, 5 -> audio q34, q36, q38, q39)
+    const listeningDaySet = cfg.listeningSets[d];
+    const selectedListeningIndices = [0, 2, 4, 5];
 
     let qNum = 1;
     const questions = [];
 
-    // SECTION 1: 文字・語彙 (15 Qs: Q1..Q15)
+    // SECTION 1: 文字・語彙 (7 Qs: Q1..Q7)
     for (const item of m1Items) {
       const q = {
         qNum: qNum++,
@@ -946,7 +952,7 @@ function assembleExamsForLevel(cfg) {
       questions.push(q);
     }
 
-    // SECTION 2 PART A: 文法 (10 Qs: Q16..Q25)
+    // SECTION 2 PART A: 文法 (5 Qs: Q8..Q12)
     for (const item of g1Items) {
       const q = {
         qNum: qNum++,
@@ -980,92 +986,84 @@ function assembleExamsForLevel(cfg) {
       q.optionReasons = buildOptionReasons(q, item);
       questions.push(q);
     }
-    // 問題3 文章の文法 (Cloze passage: Q23, Q24, Q25)
-    clozeItem.questions.forEach((cq, idx) => {
+    // 問題3 文章の文法 (1 Cloze question: Q12)
+    {
+      const cq0 = clozeItem.questions[0];
+      const cq1 = clozeItem.questions[1];
+      const cq2 = clozeItem.questions[2];
+      const adaptedClozePassage = clozeItem.passage
+        .replace('[ 23 ]', '[ 12 ]')
+        .replace('[ 24 ]', cq1 ? cq1.options[cq1.answer] : '')
+        .replace('[ 25 ]', cq2 ? cq2.options[cq2.answer] : '');
       const q = {
         qNum: qNum++,
         section: 'grammar',
         mondaiId: 'g-m3',
-        mondaiTitle: '問題3　次の文章を読んで、文章全体の趣旨を踏まえて、[ 23 ] から [ 25 ] の中に入る最もよいものを、１・２・３・４から一つ選びなさい。',
+        mondaiTitle: '問題3　次の文章を読んで、文章全体の趣旨を踏まえて、[ 12 ] の中に入る最もよいものを、１・２・３・４から一つ選びなさい。',
         passageGroupId: `${cfg.level}-day-${d + 1}-cloze`,
-        passageText: idx === 0 ? clozeItem.passage : null,
-        prompt: `${cq.blank} に入る最もよいものを選びなさい。`,
-        options: cq.options,
-        answer: cq.answer,
-        explanation: cq.explanation
+        passageText: adaptedClozePassage,
+        prompt: '[ 12 ] に入る最もよいものを選びなさい。',
+        options: cq0.options,
+        answer: cq0.answer,
+        explanation: cq0.explanation
       };
-      q.optionReasons = buildOptionReasons(q, cq);
+      q.optionReasons = buildOptionReasons(q, cq0);
       questions.push(q);
-    });
+    }
 
-    // SECTION 2 PART B: 読解 (8 Qs: Q26..Q33)
-    shortItems.forEach((sp, idx) => {
+    // SECTION 2 PART B: 読解 (4 Qs: Q13..Q16)
+    // Q13: 問題4 短文 (1 passage, 1 Q)
+    {
       const q = {
         qNum: qNum++,
         section: 'reading',
         mondaiId: 'r-m4',
-        mondaiTitle: '問題4　次の（1）・（2）の文章を読んで、質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
-        passageGroupId: `${cfg.level}-day-${d + 1}-short-${idx + 1}`,
-        passageLabel: `（${idx + 1}）`,
-        passageTitle: sp.title || null,
-        passageStyle: sp.style || 'essay',
-        passageText: sp.passage,
-        prompt: sp.question,
-        options: sp.options,
-        answer: sp.answer,
-        explanation: sp.explanation
+        mondaiTitle: '問題4　次の文章を読んで、質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
+        passageGroupId: `${cfg.level}-day-${d + 1}-short-1`,
+        passageTitle: shortItem.title || null,
+        passageStyle: shortItem.style || 'essay',
+        passageText: shortItem.passage,
+        prompt: shortItem.question,
+        options: shortItem.options,
+        answer: shortItem.answer,
+        explanation: shortItem.explanation
       };
-      q.optionReasons = buildOptionReasons(q, sp);
+      q.optionReasons = buildOptionReasons(q, shortItem);
       questions.push(q);
-    });
+    }
 
-    midItem.questions.forEach((mq, idx) => {
+    // Q14 & Q15: 問題5 中文/長文 (1 passage, 2 Qs)
+    essayItem.questions.forEach((eq, idx) => {
       const q = {
         qNum: qNum++,
         section: 'reading',
-        mondaiId: 'r-m5',
-        mondaiTitle: '問題5　次の文章を読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
-        passageGroupId: `${cfg.level}-day-${d + 1}-mid`,
-        passageTitle: idx === 0 ? midItem.title : null,
-        passageText: idx === 0 ? midItem.passage : null,
-        prompt: mq.prompt,
-        options: mq.options,
-        answer: mq.answer,
-        explanation: mq.explanation
+        mondaiId: useLongToday ? 'r-m6' : 'r-m5',
+        mondaiTitle: `問題5　次の文章（${useLongToday ? '長文' : '中文'}）を読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。`,
+        passageGroupId: `${cfg.level}-day-${d + 1}-essay`,
+        passageTitle: idx === 0 ? essayItem.title : null,
+        passageText: idx === 0 ? essayItem.passage : null,
+        prompt: eq.prompt,
+        options: eq.options,
+        answer: eq.answer,
+        explanation: eq.explanation
       };
-      q.optionReasons = buildOptionReasons({ ...q, passageText: midItem.passage }, mq);
+      q.optionReasons = buildOptionReasons({ ...q, passageText: essayItem.passage }, eq);
       questions.push(q);
     });
 
-    longItem.questions.forEach((lq, idx) => {
-      const q = {
-        qNum: qNum++,
-        section: 'reading',
-        mondaiId: 'r-m6',
-        mondaiTitle: '問題6　次の文章を読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
-        passageGroupId: `${cfg.level}-day-${d + 1}-long`,
-        passageTitle: idx === 0 ? longItem.title : null,
-        passageText: idx === 0 ? longItem.passage : null,
-        prompt: lq.prompt,
-        options: lq.options,
-        answer: lq.answer,
-        explanation: lq.explanation
-      };
-      q.optionReasons = buildOptionReasons({ ...q, passageText: longItem.passage }, lq);
-      questions.push(q);
-    });
-
-    infoItem.questions.forEach((iq, idx) => {
+    // Q16: 問題6 情報検索 (1 flyer + table, 1 Q)
+    {
+      const iq = infoItem.questions[0];
       const q = {
         qNum: qNum++,
         section: 'reading',
         mondaiId: 'r-m7',
-        mondaiTitle: '問題7　右のページは、案内やのお知らせです。これを読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
+        mondaiTitle: '問題6　次の案内やのお知らせを読んで、後の質問に答えなさい。答えは、１・２・３・４から最もよいものを一つ選びなさい。',
         passageGroupId: `${cfg.level}-day-${d + 1}-info`,
-        passageTitle: idx === 0 ? infoItem.title : null,
-        passageText: idx === 0 ? infoItem.intro : null,
-        passageTable: idx === 0 ? infoItem.table : null,
-        passageNotes: idx === 0 ? infoItem.notes : null,
+        passageTitle: infoItem.title || null,
+        passageText: infoItem.intro || null,
+        passageTable: infoItem.table || null,
+        passageNotes: infoItem.notes || null,
         prompt: iq.prompt,
         options: iq.options,
         answer: iq.answer,
@@ -1073,17 +1071,19 @@ function assembleExamsForLevel(cfg) {
       };
       q.optionReasons = buildOptionReasons({ ...q, passageText: infoItem.intro, passageNotes: infoItem.notes }, iq);
       questions.push(q);
-    });
+    }
 
-    // SECTION 3: 聴解 (7 Qs: Q34..Q40)
-    listeningItems.forEach(lq => {
+    // SECTION 3: 聴解 (4 Qs: Q17..Q20)
+    selectedListeningIndices.forEach(origIdx => {
+      const lq = listeningDaySet[origIdx];
+      const origAudioQNum = 34 + origIdx;
       const curQNum = qNum++;
       const q = {
         qNum: curQNum,
         section: 'listening',
         mondaiId: `l-${lq.mondai.slice(0, 3)}`,
         mondaiTitle: `聴解 ${lq.mondai}　音声を聞いて、最もよいものを一つ選びなさい。`,
-        audioFile: `./${cfg.audioFolder}/d${d + 1}-q${curQNum}.mp3`,
+        audioFile: `./${cfg.audioFolder}/d${d + 1}-q${origAudioQNum}.mp3`,
         listeningIntro: lq.intro,
         dialogue: lq.dialogue,
         prompt: lq.question,
@@ -1101,7 +1101,7 @@ function assembleExamsForLevel(cfg) {
       date: isoDate,
       labelEn: `${dowEn}, ${dayOfMonth} Nov 2026`.replace('Nov', month === 11 ? 'Nov' : 'Dec'),
       labelJa: `${month}月${dayOfMonth}日（${dowJa}）`,
-      durationSeconds: 3600,
+      durationSeconds: 1800, // 30 minutes (half hour)
       totalQuestions: questions.length,
       questions
     });
