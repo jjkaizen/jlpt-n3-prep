@@ -1,0 +1,16 @@
+{
+  "name": "jlpt-n3-prep",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "JLPT N3 Daily 1-Hour Scaled Exam (Nov 2 – Dec 6) with 1-Tap English & jpdb.io Word Lookup",
+  "scripts": {
+    "build:data": "node scripts/build-exam-data.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "kuromoji": "^0.1.2",
+    "vite": "^6.2.0"
+  }
+}
