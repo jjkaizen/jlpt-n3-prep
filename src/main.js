@@ -49,9 +49,11 @@ const initialLevel = detectInitialLevel();
 const appState = {
   level: initialLevel, // 'N3' | 'N4'
   examsByLevel: {}, // { N3: [...], N4: [...] }
+  decksByLevel: {}, // { N3: [...], N4: [...] }
   loadingExams: true,
+  loadingDeck: false,
   store: loadStateForLevel(initialLevel),
-  activeTab: 'daily', // 'daily' | 'progress' | 'exam'
+  activeTab: 'daily', // 'daily' | 'deck' | 'progress' | 'exam'
   currentExamDay: null, // 1..34
   timerPaused: false,
   timerInterval: null,
@@ -59,11 +61,22 @@ const appState = {
   openTranscripts: {}, // { [qNum]: boolean }
   playingQuestion: null, // qNum
   activeWordPopup: null,
-  showBackupModal: false
+  showBackupModal: false,
+  // Unlimited Anki Deck Session State
+  deckFilter: 'all', // 'all' | 'weak' | 'kanji' | 'adverb_grammar'
+  deckHideMastered: true,
+  deckQueue: [], // array of card objects
+  deckCursor: 0,
+  deckFlipped: false,
+  deckSessionReviewed: 0
 };
 
 function getCurrentExams() {
   return appState.examsByLevel[appState.level] || [];
+}
+
+function getCurrentDeck() {
+  return appState.decksByLevel[appState.level] || [];
 }
 
 function getPassMark() {
@@ -88,6 +101,106 @@ async function ensureExamsLoaded(level) {
   }
   appState.loadingExams = false;
   renderApp();
+}
+
+async function ensureDeckLoaded(level) {
+  if (appState.decksByLevel[level]) {
+    if (!appState.deckQueue.length) rebuildDeckQueue(false);
+    return;
+  }
+  appState.loadingDeck = true;
+  renderApp();
+  try {
+    const file = level === 'N4' ? './data/deck-n4.json' : './data/deck-n3.json';
+    const res = await fetch(file);
+    const data = await res.json();
+    appState.decksByLevel[level] = data;
+  } catch (e) {
+    console.error('Failed to load deck for', level, e);
+    appState.decksByLevel[level] = [];
+  }
+  appState.loadingDeck = false;
+  rebuildDeckQueue(false);
+  renderApp();
+}
+
+function getCardStatus(cardId) {
+  if (!appState.store.deck) appState.store.deck = {};
+  return appState.store.deck[cardId]?.status || 'new'; // 'new' | 'struggling' | 'reviewing' | 'mastered'
+}
+
+function setCardStatus(cardId, status) {
+  if (!appState.store.deck) appState.store.deck = {};
+  const prev = appState.store.deck[cardId] || { reps: 0 };
+  appState.store.deck[cardId] = {
+    status,
+    reps: (prev.reps || 0) + 1
+  };
+  saveStore();
+}
+
+function isCardMissedInExams(card) {
+  if (!card.day || !card.qNum) return false;
+  const daySt = appState.store.days?.[card.day];
+  if (!daySt || daySt.status !== 'completed') return false;
+  const examsData = getCurrentExams();
+  const exam = examsData.find(e => e.day === card.day);
+  const qObj = exam?.questions.find(q => q.qNum === card.qNum);
+  if (!qObj) return false;
+  return daySt.answers?.[card.qNum] !== qObj.answer;
+}
+
+function rebuildDeckQueue(shuffle = false) {
+  const fullDeck = getCurrentDeck();
+  if (!fullDeck.length) {
+    appState.deckQueue = [];
+    appState.deckCursor = 0;
+    appState.deckFlipped = false;
+    return;
+  }
+
+  let filtered = fullDeck.filter(c => {
+    const st = getCardStatus(c.id);
+    if (appState.deckHideMastered && st === 'mastered' && appState.deckFilter !== 'weak') {
+      return false;
+    }
+    if (appState.deckFilter === 'weak') {
+      return st === 'struggling' || isCardMissedInExams(c);
+    }
+    if (appState.deckFilter === 'kanji') {
+      return c.cat === 'kanji';
+    }
+    if (appState.deckFilter === 'adverb_grammar') {
+      return c.cat === 'adverb_grammar';
+    }
+    return true;
+  });
+
+  // Sort so struggling / missed-in-exam cards come first, then unseen exam cards, then reviewing
+  if (!shuffle) {
+    filtered.sort((a, b) => {
+      const sa = getCardStatus(a.id);
+      const sb = getCardStatus(b.id);
+      const scoreCard = (c, s) => {
+        if (s === 'struggling' || isCardMissedInExams(c)) return 0;
+        if (s === 'new' && c.day) return 1;
+        if (s === 'new') return 2;
+        if (s === 'reviewing') return 3;
+        return 4;
+      };
+      return scoreCard(a, sa) - scoreCard(b, sb);
+    });
+  } else {
+    filtered = [...filtered];
+    for (let i = filtered.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [filtered[i], filtered[j]] = [filtered[j], filtered[i]];
+    }
+  }
+
+  appState.deckQueue = filtered;
+  appState.deckCursor = 0;
+  appState.deckFlipped = false;
 }
 
 function saveStore() {
@@ -1450,6 +1563,210 @@ function renderScoreProgressScreen() {
   `;
 }
 
+// Render Screen 4: Unlimited Anki-Style Exam Word Deck
+function renderWordDeckScreen() {
+  const fullDeck = getCurrentDeck();
+  if (appState.loadingDeck || !fullDeck.length) {
+    return `<div class="hero-banner"><b>Loading JLPT ${appState.level} Unlimited Exam Word Deck...</b></div>`;
+  }
+
+  let masteredCount = 0;
+  let strugglingCount = 0;
+  let reviewingCount = 0;
+  for (const c of fullDeck) {
+    const st = getCardStatus(c.id);
+    if (st === 'mastered') masteredCount++;
+    else if (st === 'struggling' || isCardMissedInExams(c)) strugglingCount++;
+    else if (st === 'reviewing') reviewingCount++;
+  }
+
+  const queue = appState.deckQueue;
+  const curCard = queue.length > 0 ? queue[appState.deckCursor % queue.length] : null;
+
+  let cardStageHtml = '';
+  if (!curCard) {
+    cardStageHtml = `
+      <div class="hero-banner" style="text-align:center; padding:2rem 1.2rem;">
+        <h2 style="margin:0 0 0.5rem;">🎉 No cards match this filter right now!</h2>
+        <p style="color:var(--ink-muted); font-size:0.9rem; margin:0 0 1rem;">
+          ${
+            appState.deckFilter === 'weak'
+              ? 'You have no cards marked "Again / Struggling" or missed in completed papers yet. Switch to "All Exam Words" or "Kanji & Readings" to start reviewing!'
+              : 'All cards in this view are marked Mastered. Uncheck "Hide Mastered" or switch filters to review them again.'
+          }
+        </p>
+        <div style="display:flex; gap:0.5rem; justify-content:center; flex-wrap:wrap;">
+          <button class="btn-primary" data-action="set-deck-filter" data-filter="all">Show All Exam Words</button>
+          <button class="btn-secondary" data-action="toggle-hide-mastered">Show Mastered Cards Too</button>
+        </div>
+      </div>
+    `;
+  } else {
+    const cardStatus = getCardStatus(curCard.id);
+    const missedInPaper = isCardMissedInExams(curCard);
+    const sourceLabel = curCard.day
+      ? `${appState.level} · Day ${curCard.day} Paper (Q${curCard.qNum})`
+      : `JLPT ${appState.level} Core Exam Bank`;
+
+    let statusBadge = `<span class="badge badge-not-started">New Card</span>`;
+    if (cardStatus === 'mastered') {
+      statusBadge = `<span class="badge badge-pass">🟢 Mastered</span>`;
+    } else if (cardStatus === 'struggling' || missedInPaper) {
+      statusBadge = `<span class="badge badge-fail">🔴 ${
+        missedInPaper ? 'Missed in Paper' : 'Struggling / Again'
+      }</span>`;
+    } else if (cardStatus === 'reviewing') {
+      statusBadge = `<span class="badge badge-progress">🟡 Reviewing</span>`;
+    }
+
+    const jpdbHref = jpdbUrl(curCard.w);
+
+    cardStageHtml = `
+      <div class="anki-card-stage">
+        <div class="anki-card" data-action="flip-anki-card" title="Tap anywhere on card to flip">
+          <div>
+            <div class="anki-card-top">
+              <span style="font-size:0.75rem; font-weight:800; color:var(--ink-muted);">
+                Card ${(appState.deckCursor % queue.length) + 1} of ${queue.length} · ${esc(sourceLabel)}
+              </span>
+              <div style="display:flex; gap:0.35rem; align-items:center;">
+                ${statusBadge}
+              </div>
+            </div>
+
+            <div class="anki-word-front">${esc(curCard.w)}</div>
+
+            ${
+              curCard.ja
+                ? `<div class="anki-sentence-front">
+                    ${renderClickableJapanese(curCard.ja)}
+                  </div>`
+                : ''
+            }
+          </div>
+
+          ${
+            !appState.deckFlipped
+              ? `
+            <div style="text-align:center; padding-top:0.85rem; border-top:1px dashed var(--border-soft); color:var(--accent); font-weight:800; font-size:0.88rem;">
+              👆 Tap Anywhere on Card to Reveal Reading & English (or press Space)
+            </div>
+          `
+              : `
+            <div class="anki-back-reveal">
+              <div class="anki-reading-back">【 ${esc(curCard.r)} 】</div>
+              <div class="anki-meaning-back">${esc(curCard.m)}</div>
+              ${
+                curCard.en
+                  ? `<div class="anki-note-back"><b>Sentence / Context:</b> ${esc(curCard.en)}</div>`
+                  : ''
+              }
+              ${
+                curCard.note
+                  ? `<div class="anki-note-back"><b>💡 Exam Trap / Note:</b> ${esc(curCard.note)}</div>`
+                  : ''
+              }
+              <div style="display:flex; justify-content:center; margin-top:0.2rem;">
+                <a class="btn-jpdb" href="${jpdbHref}" target="_blank" rel="noopener noreferrer">
+                  🔎 Open "${esc(curCard.w)}" in jpdb.io ↗
+                </a>
+              </div>
+            </div>
+          `
+          }
+        </div>
+
+        <div class="anki-rating-grid">
+          <button type="button" class="btn-anki-rate btn-anki-again" data-action="rate-anki-card" data-rating="again">
+            <span>🔴 Again (もう一度)</span>
+            <small>Repeat in 6 cards · Flag Weak</small>
+          </button>
+          <button type="button" class="btn-anki-rate btn-anki-good" data-action="rate-anki-card" data-rating="good">
+            <span>🟡 Good (覚えた)</span>
+            <small>Next card · Keep in rotation</small>
+          </button>
+          <button type="button" class="btn-anki-rate btn-anki-easy" data-action="rate-anki-card" data-rating="easy">
+            <span>🟢 Easy / Know It</span>
+            <small>Mark Mastered · Hide if filtered</small>
+          </button>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.85rem; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" class="btn-secondary" data-action="prev-anki-card">← Previous Card</button>
+          <span style="font-size:0.78rem; color:var(--ink-muted); font-weight:700;">
+            Session Reviewed: ${appState.deckSessionReviewed} cards (Unlimited · No Timer)
+          </span>
+          <button type="button" class="btn-secondary" data-action="next-anki-card">Skip / Next →</button>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="hero-banner">
+      <div class="hero-top">
+        <div>
+          <span class="hero-eyebrow">UNLIMITED ANKI-STYLE REVIEW · NO TIMER · NO DAILY LIMIT</span>
+          <h1 class="hero-title">JLPT ${appState.level} Exam Word & Grammar Deck（全${fullDeck.length}語）</h1>
+          <p class="hero-desc">
+            Flip through all vocabulary, kanji reading traps, synonyms, usage words, and grammar patterns from the 34 ${appState.level} exam papers. Tap any word in the example sentence to open <b>jpdb.io</b>.
+          </p>
+        </div>
+        <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+          <button class="btn-secondary" data-action="shuffle-deck">🔀 Shuffle Deck</button>
+          <button class="btn-secondary" data-action="toggle-hide-mastered">
+            ${appState.deckHideMastered ? '👁 Hide Mastered: ON' : '👁 Hide Mastered: OFF'}
+          </button>
+        </div>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat-pill">
+          <div class="stat-label">TOTAL ${appState.level} CARDS</div>
+          <div class="stat-val">${fullDeck.length}</div>
+        </div>
+        <div class="stat-pill">
+          <div class="stat-label">🔥 WEAK / MISSED</div>
+          <div class="stat-val" style="color:var(--fail);">${strugglingCount}</div>
+        </div>
+        <div class="stat-pill">
+          <div class="stat-label">🟡 REVIEWING</div>
+          <div class="stat-val" style="color:var(--accent);">${reviewingCount}</div>
+        </div>
+        <div class="stat-pill">
+          <div class="stat-label">🟢 MASTERED</div>
+          <div class="stat-val" style="color:var(--pass);">${masteredCount}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="deck-filter-bar">
+      <button type="button" class="deck-filter-pill ${
+        appState.deckFilter === 'all' ? 'active' : ''
+      }" data-action="set-deck-filter" data-filter="all">
+        📚 All Exam Words (${fullDeck.length})
+      </button>
+      <button type="button" class="deck-filter-pill ${
+        appState.deckFilter === 'weak' ? 'active' : ''
+      }" data-action="set-deck-filter" data-filter="weak">
+        🔥 Weak & Missed in Papers (${strugglingCount})
+      </button>
+      <button type="button" class="deck-filter-pill ${
+        appState.deckFilter === 'kanji' ? 'active' : ''
+      }" data-action="set-deck-filter" data-filter="kanji">
+        漢字 Kanji Reading & Lookalikes
+      </button>
+      <button type="button" class="deck-filter-pill ${
+        appState.deckFilter === 'adverb_grammar' ? 'active' : ''
+      }" data-action="set-deck-filter" data-filter="adverb_grammar">
+        ✨ Adverbs, Usage & Grammar
+      </button>
+    </div>
+
+    ${cardStageHtml}
+  `;
+}
+
 // Render Backup / Restore Modal
 function renderBackupModal() {
   if (!appState.showBackupModal) return '';
@@ -1485,6 +1802,8 @@ function renderApp() {
   let mainContent = '';
   if (appState.activeTab === 'exam' && appState.currentExamDay) {
     mainContent = renderExamPaperScreen();
+  } else if (appState.activeTab === 'deck') {
+    mainContent = renderWordDeckScreen();
   } else if (appState.activeTab === 'progress') {
     mainContent = renderScoreProgressScreen();
   } else {
@@ -1512,12 +1831,17 @@ function renderApp() {
           <button class="nav-tab ${
             appState.activeTab === 'daily' || appState.activeTab === 'exam' ? 'active' : ''
           }" data-action="switch-tab" data-tab="daily">
-            📅 ${appState.level} Papers (Nov 2–Dec 6)
+            📅 ${appState.level} Papers
+          </button>
+          <button class="nav-tab ${
+            appState.activeTab === 'deck' ? 'active' : ''
+          }" data-action="switch-tab" data-tab="deck">
+            🃏 Word Deck
           </button>
           <button class="nav-tab ${
             appState.activeTab === 'progress' ? 'active' : ''
           }" data-action="switch-tab" data-tab="progress">
-            📈 ${appState.level} Score Progress
+            📈 Scores
           </button>
         </nav>
       </div>
@@ -1560,8 +1884,10 @@ document.addEventListener('click', event => {
     } catch {}
     appState.store = loadStateForLevel(newLevel);
     appState.currentExamDay = null;
-    appState.activeTab = 'daily';
+    appState.deckQueue = [];
+    if (appState.activeTab === 'exam') appState.activeTab = 'daily';
     ensureExamsLoaded(newLevel);
+    if (appState.activeTab === 'deck') ensureDeckLoaded(newLevel);
     return;
   }
 
@@ -1581,7 +1907,89 @@ document.addEventListener('click', event => {
     stopAllAudio();
     appState.activeWordPopup = null;
     appState.activeTab = tab;
+    if (tab === 'deck') {
+      ensureDeckLoaded(appState.level);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    renderApp();
+    return;
+  }
+
+  if (action === 'flip-anki-card') {
+    appState.deckFlipped = !appState.deckFlipped;
+    renderApp();
+    return;
+  }
+
+  if (action === 'rate-anki-card') {
+    const rating = actionEl.getAttribute('data-rating'); // 'again' | 'good' | 'easy'
+    const q = appState.deckQueue;
+    if (!q.length) return;
+    const idx = appState.deckCursor % q.length;
+    const curCard = q[idx];
+
+    appState.deckSessionReviewed++;
+
+    if (rating === 'again') {
+      setCardStatus(curCard.id, 'struggling');
+      // Re-insert this card 6 positions ahead so the user sees it again soon
+      const reinsertPos = Math.min(q.length, idx + 6);
+      q.splice(reinsertPos, 0, curCard);
+      appState.deckCursor = idx + 1;
+    } else if (rating === 'good') {
+      setCardStatus(curCard.id, 'reviewing');
+      appState.deckCursor = (idx + 1) % q.length;
+    } else if (rating === 'easy') {
+      setCardStatus(curCard.id, 'mastered');
+      if (appState.deckHideMastered && appState.deckFilter !== 'weak') {
+        q.splice(idx, 1);
+        if (q.length > 0) {
+          appState.deckCursor = idx % q.length;
+        }
+      } else {
+        appState.deckCursor = (idx + 1) % q.length;
+      }
+    }
+
+    appState.deckFlipped = false;
+    renderApp();
+    return;
+  }
+
+  if (action === 'set-deck-filter') {
+    appState.deckFilter = actionEl.getAttribute('data-filter') || 'all';
+    rebuildDeckQueue(false);
+    renderApp();
+    return;
+  }
+
+  if (action === 'toggle-hide-mastered') {
+    appState.deckHideMastered = !appState.deckHideMastered;
+    rebuildDeckQueue(false);
+    renderApp();
+    return;
+  }
+
+  if (action === 'shuffle-deck') {
+    rebuildDeckQueue(true);
+    renderApp();
+    return;
+  }
+
+  if (action === 'prev-anki-card') {
+    const q = appState.deckQueue;
+    if (!q.length) return;
+    appState.deckCursor = (appState.deckCursor - 1 + q.length) % q.length;
+    appState.deckFlipped = false;
+    renderApp();
+    return;
+  }
+
+  if (action === 'next-anki-card') {
+    const q = appState.deckQueue;
+    if (!q.length) return;
+    appState.deckCursor = (appState.deckCursor + 1) % q.length;
+    appState.deckFlipped = false;
     renderApp();
     return;
   }
@@ -1779,6 +2187,28 @@ document.addEventListener('click', event => {
     } catch {
       alert('Invalid backup code.');
     }
+  }
+});
+
+// Keyboard shortcuts for Anki Word Deck (Space = Flip, 1 = Again, 2 = Good, 3 = Easy, Left/Right = Prev/Next)
+document.addEventListener('keydown', event => {
+  if (appState.activeTab !== 'deck' || appState.showBackupModal) return;
+  if (event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA')) return;
+
+  if (event.code === 'Space') {
+    event.preventDefault();
+    appState.deckFlipped = !appState.deckFlipped;
+    renderApp();
+  } else if (event.key === '1') {
+    document.querySelector('[data-rating="again"]')?.click();
+  } else if (event.key === '2') {
+    document.querySelector('[data-rating="good"]')?.click();
+  } else if (event.key === '3') {
+    document.querySelector('[data-rating="easy"]')?.click();
+  } else if (event.key === 'ArrowRight') {
+    document.querySelector('[data-action="next-anki-card"]')?.click();
+  } else if (event.key === 'ArrowLeft') {
+    document.querySelector('[data-action="prev-anki-card"]')?.click();
   }
 });
 

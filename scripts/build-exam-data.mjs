@@ -1146,11 +1146,223 @@ const examsN4 = assembleExamsForLevel({
   listeningSets: N4_LISTENING_SETS
 });
 
+// Build Unlimited Anki-Style Flashcard Decks for N3 and N4
+function buildDeckForLevel(level, levelExams, synonymsBank, usagesBank, grammarBank, openJlptVocab) {
+  const cards = [];
+  const seenWords = new Set();
+  let cardSeq = 1;
+
+  const addCard = ({ w, r, m, cat, day, qNum, ja, en, note }) => {
+    const cleanW = String(w || '').trim();
+    if (!cleanW) return;
+    const dedupeKey = `${cleanW}::${cat}`;
+    if (seenWords.has(dedupeKey) && !day) return;
+    seenWords.add(dedupeKey);
+    cards.push({
+      id: `${level.toLowerCase()}-c${cardSeq++}`,
+      w: cleanW,
+      r: r || cleanW,
+      m: m || '',
+      cat: cat || 'vocab', // 'kanji' | 'adverb_grammar' | 'vocab'
+      day: day || null,
+      qNum: qNum || null,
+      ja: ja || '',
+      en: en || '',
+      note: note || ''
+    });
+  };
+
+  // 1. Extract directly from the 34 Daily Exam Papers (so every exam question has a linked card!)
+  for (const exam of levelExams) {
+    for (const q of exam.questions) {
+      if (q.mondaiId === 'v-m1') {
+        // Kanji reading
+        const rightReading = q.options[q.answer];
+        const entry = lexicon.get(q.targetWord);
+        addCard({
+          w: q.targetWord,
+          r: rightReading,
+          m: entry?.m || q.explanation,
+          cat: 'kanji',
+          day: exam.day,
+          qNum: q.qNum,
+          ja: q.prompt,
+          en: q.explanation,
+          note: `Trap readings in exam: ${q.options.filter((_, i) => i !== q.answer).join(' / ')}`
+        });
+      } else if (q.mondaiId === 'v-m2') {
+        // Kana -> Kanji
+        const rightKanji = q.options[q.answer];
+        const entry = lexicon.get(rightKanji);
+        const kBreakdown = [...rightKanji]
+          .map(ch => {
+            const ki = kanjiMap.get(ch);
+            return ki ? `${ch} (${(ki.meanings || []).slice(0, 2).join('/')})` : ch;
+          })
+          .join(' + ');
+        addCard({
+          w: rightKanji,
+          r: q.targetWord,
+          m: entry?.m || q.explanation,
+          cat: 'kanji',
+          day: exam.day,
+          qNum: q.qNum,
+          ja: q.prompt.replace(`<u>${q.targetWord}</u>`, `<u>${rightKanji}</u>`),
+          en: q.explanation,
+          note: `Kanji breakdown: ${kBreakdown} · Lookalike traps: ${q.options.filter((_, i) => i !== q.answer).join(' / ')}`
+        });
+      } else if (q.mondaiId === 'v-m3') {
+        // Context vocab
+        const rightWord = q.options[q.answer];
+        const entry = lexicon.get(rightWord);
+        addCard({
+          w: rightWord,
+          r: entry?.r || rightWord,
+          m: entry?.m || q.explanation,
+          cat: /^[\u4e00-\u9faf]{2,}$/.test(rightWord) ? 'kanji' : 'vocab',
+          day: exam.day,
+          qNum: q.qNum,
+          ja: q.prompt.replace('（　　）', `<u>${rightWord}</u>`),
+          en: q.explanation,
+          note: `Day ${exam.day} · Q${q.qNum} Context Vocab`
+        });
+      } else if (q.mondaiId === 'v-m4') {
+        // Synonym
+        const rightSyn = q.options[q.answer];
+        const entry = lexicon.get(q.targetWord);
+        addCard({
+          w: q.targetWord,
+          r: entry?.r || q.targetWord,
+          m: `${entry?.m ? entry.m + ' — ' : ''}Closest synonym: 「${rightSyn}」`,
+          cat: 'adverb_grammar',
+          day: exam.day,
+          qNum: q.qNum,
+          ja: q.prompt,
+          en: q.explanation,
+          note: `JLPT Synonym Match: ${q.targetWord} ＝ ${rightSyn}`
+        });
+      } else if (q.mondaiId === 'v-m5') {
+        // Usage (用法)
+        const targetW = q.prompt.replace(/[【】\s]/g, '');
+        const entry = lexicon.get(targetW);
+        const rightSentence = q.options[q.answer];
+        addCard({
+          w: targetW,
+          r: entry?.r || targetW,
+          m: entry?.m || q.explanation,
+          cat: 'adverb_grammar',
+          day: exam.day,
+          qNum: q.qNum,
+          ja: rightSentence,
+          en: q.explanation,
+          note: `用法 (Correct Usage in Context)`
+        });
+      } else if (q.mondaiId === 'g-m1' || q.mondaiId === 'g-m3') {
+        // Grammar
+        const rightGram = q.options[q.answer];
+        const gNote = findGrammarNote(rightGram);
+        addCard({
+          w: rightGram,
+          r: rightGram,
+          m: gNote || q.explanation,
+          cat: 'adverb_grammar',
+          day: exam.day,
+          qNum: q.qNum,
+          ja: q.prompt.replace('（　　）', `<u>${rightGram}</u>`).replace('[ 12 ]', `<u>${rightGram}</u>`),
+          en: q.explanation,
+          note: `Day ${exam.day} · Q${q.qNum} Grammar Pattern`
+        });
+      }
+    }
+  }
+
+  // 2. Add remaining curated Usage, Synonym, and Grammar items from our banks
+  for (const u of usagesBank) {
+    addCard({
+      w: u.word,
+      r: u.reading,
+      m: u.meaning,
+      cat: 'adverb_grammar',
+      day: null,
+      qNum: null,
+      ja: u.options[u.answer],
+      en: u.explanation,
+      note: '用法 (Word Usage Collocation)'
+    });
+  }
+
+  for (const s of synonymsBank) {
+    const entry = lexicon.get(s.target);
+    const rightSyn = s.options[s.answer];
+    addCard({
+      w: s.target,
+      r: entry?.r || s.target,
+      m: `${entry?.m ? entry.m + ' · ' : ''}Synonym: 「${rightSyn}」`,
+      cat: 'adverb_grammar',
+      day: null,
+      qNum: null,
+      ja: s.sentence,
+      en: s.explanation,
+      note: `言い換え類義: ${s.target} ＝ ${rightSyn}`
+    });
+  }
+
+  // 3. Add full OpenJLPT vocabulary with verified example sentences so the deck is a complete exam dictionary!
+  for (const item of openJlptVocab) {
+    const ex = (item.examples || [])[0];
+    const isKanjiComp = /^[\u4e00-\u9faf]{2,4}$/.test(item.word);
+    const isAdv = (item.pos || []).some(p => p.includes('adv') || p.includes('conj'));
+    const cat = isAdv ? 'adverb_grammar' : isKanjiComp ? 'kanji' : 'vocab';
+    const kBreakdown = isKanjiComp
+      ? [...item.word]
+          .map(ch => {
+            const ki = kanjiMap.get(ch);
+            return ki ? `${ch} (${(ki.meanings || []).slice(0, 2).join('/')})` : ch;
+          })
+          .join(' + ')
+      : '';
+
+    addCard({
+      w: item.word,
+      r: item.reading || item.word,
+      m: (item.meanings || []).slice(0, 4).join('; '),
+      cat,
+      day: null,
+      qNum: null,
+      ja: ex ? ex.ja.replace(item.word, `<u>${item.word}</u>`) : `<u>${item.word}</u>`,
+      en: ex ? ex.en : '',
+      note: kBreakdown ? `Kanji: ${kBreakdown}` : `JLPT ${item.level || level} (${(item.pos || []).join(', ')})`
+    });
+  }
+
+  return cards;
+}
+
+const deckN3 = buildDeckForLevel(
+  'N3',
+  examsN3,
+  SYNONYM_QUESTIONS,
+  USAGE_QUESTIONS,
+  GRAMMAR_SENTENCE_QUESTIONS,
+  allVocabByLevel.n3
+);
+
+const deckN4 = buildDeckForLevel(
+  'N4',
+  examsN4,
+  N4_SYNONYM_QUESTIONS,
+  N4_USAGE_QUESTIONS,
+  N4_GRAMMAR_SENTENCE_QUESTIONS,
+  [...allVocabByLevel.n4, ...allVocabByLevel.n5.slice(0, 350)]
+);
+
 fs.writeFileSync(path.join(OUT_DIR, 'exams.json'), JSON.stringify(examsN3));
 fs.writeFileSync(path.join(OUT_DIR, 'exams-n3.json'), JSON.stringify(examsN3));
 fs.writeFileSync(path.join(OUT_DIR, 'exams-n4.json'), JSON.stringify(examsN4));
 fs.writeFileSync(path.join(PUBLIC_DATA_DIR, 'exams-n3.json'), JSON.stringify(examsN3));
 fs.writeFileSync(path.join(PUBLIC_DATA_DIR, 'exams-n4.json'), JSON.stringify(examsN4));
+fs.writeFileSync(path.join(PUBLIC_DATA_DIR, 'deck-n3.json'), JSON.stringify(deckN3));
+fs.writeFileSync(path.join(PUBLIC_DATA_DIR, 'deck-n4.json'), JSON.stringify(deckN4));
 
-console.log(`Built N3: ${examsN3.length} daily exams (${examsN3.length * 40} Qs)`);
-console.log(`Built N4: ${examsN4.length} daily exams (${examsN4.length * 40} Qs)`);
+console.log(`Built N3: ${examsN3.length} daily exams (${examsN3.length * 20} Qs) + ${deckN3.length} Anki flashcards`);
+console.log(`Built N4: ${examsN4.length} daily exams (${examsN4.length * 20} Qs) + ${deckN4.length} Anki flashcards`);
