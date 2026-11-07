@@ -1622,148 +1622,124 @@ function renderWordDeckScreen() {
     const jpdbHref = jpdbUrl(curCard.w);
 
     cardStageHtml = `
-      <div class="anki-card-stage">
-        <div class="anki-card" data-action="flip-anki-card" title="Tap anywhere on card to flip">
-          <div>
-            <div class="anki-card-top">
-              <span style="font-size:0.75rem; font-weight:800; color:var(--ink-muted);">
-                Card ${(appState.deckCursor % queue.length) + 1} of ${queue.length} · ${esc(sourceLabel)}
-              </span>
-              <div style="display:flex; gap:0.35rem; align-items:center;">
-                ${statusBadge}
-              </div>
+      <div class="anki-card" data-action="flip-anki-card" title="Tap anywhere on card to flip">
+        <div>
+          <div class="anki-card-top">
+            <span style="font-size:0.72rem; font-weight:800; color:var(--ink-muted);">
+              ${(appState.deckCursor % queue.length) + 1}/${queue.length} · ${esc(sourceLabel)} · 🟢${masteredCount} 🔥${strugglingCount}
+            </span>
+            <div style="display:flex; gap:0.35rem; align-items:center;">
+              ${statusBadge}
             </div>
-
-            <div class="anki-word-front">${esc(curCard.w)}</div>
-
-            ${
-              curCard.ja
-                ? `<div class="anki-sentence-front">
-                    ${renderClickableJapanese(curCard.ja)}
-                  </div>`
-                : ''
-            }
           </div>
 
+          <div class="anki-word-front">${esc(curCard.w)}</div>
+
           ${
-            !appState.deckFlipped
-              ? `
-            <div style="text-align:center; padding-top:0.85rem; border-top:1px dashed var(--border-soft); color:var(--accent); font-weight:800; font-size:0.88rem;">
-              👆 Tap Anywhere on Card to Reveal Reading & English (or press Space)
-            </div>
-          `
-              : `
-            <div class="anki-back-reveal">
-              <div class="anki-reading-back">【 ${esc(curCard.r)} 】</div>
-              <div class="anki-meaning-back">${esc(curCard.m)}</div>
-              ${
-                curCard.en
-                  ? `<div class="anki-note-back"><b>Sentence / Context:</b> ${esc(curCard.en)}</div>`
-                  : ''
-              }
-              ${
-                curCard.note
-                  ? `<div class="anki-note-back"><b>💡 Exam Trap / Note:</b> ${esc(curCard.note)}</div>`
-                  : ''
-              }
-              <div style="display:flex; justify-content:center; margin-top:0.2rem;">
-                <a class="btn-jpdb" href="${jpdbHref}" target="_blank" rel="noopener noreferrer">
-                  🔎 Open "${esc(curCard.w)}" in jpdb.io ↗
-                </a>
-              </div>
-            </div>
-          `
+            curCard.ja
+              ? `<div class="anki-sentence-front">
+                  ${renderClickableJapanese(curCard.ja)}
+                </div>`
+              : ''
           }
         </div>
 
+        ${
+          !appState.deckFlipped
+            ? `
+          <div style="text-align:center; padding-top:0.55rem; border-top:1px dashed var(--border-soft); color:var(--accent); font-weight:800; font-size:0.84rem;">
+            👆 Tap Card to Reveal Reading & English
+          </div>
+        `
+            : `
+          <div class="anki-back-reveal">
+            <div class="anki-reading-back">【 ${esc(curCard.r)} 】</div>
+            <div class="anki-meaning-back">${esc(curCard.m)}</div>
+            ${
+              curCard.en
+                ? `<div class="anki-note-back"><b>Context:</b> ${esc(curCard.en)}</div>`
+                : ''
+            }
+            ${
+              curCard.note
+                ? `<div class="anki-note-back"><b>💡 Note:</b> ${esc(curCard.note)}</div>`
+                : ''
+            }
+            <div style="display:flex; justify-content:center; margin-top:0.1rem;">
+              <a class="btn-jpdb" style="padding:0.32rem 0.7rem; font-size:0.78rem;" href="${jpdbHref}" target="_blank" rel="noopener noreferrer">
+                🔎 Open "${esc(curCard.w)}" in jpdb.io ↗
+              </a>
+            </div>
+          </div>
+        `
+        }
+      </div>
+
+      <div class="anki-controls-dock">
         <div class="anki-rating-grid">
           <button type="button" class="btn-anki-rate btn-anki-again" data-action="rate-anki-card" data-rating="again">
-            <span>🔴 Again (もう一度)</span>
-            <small>Repeat in 6 cards · Flag Weak</small>
+            <span>🔴 Again</span>
+            <small>Repeat soon</small>
           </button>
           <button type="button" class="btn-anki-rate btn-anki-good" data-action="rate-anki-card" data-rating="good">
-            <span>🟡 Good (覚えた)</span>
-            <small>Next card · Keep in rotation</small>
+            <span>🟡 Good</span>
+            <small>Keep in deck</small>
           </button>
           <button type="button" class="btn-anki-rate btn-anki-easy" data-action="rate-anki-card" data-rating="easy">
-            <span>🟢 Easy / Know It</span>
-            <small>Mark Mastered · Hide if filtered</small>
+            <span>🟢 Easy</span>
+            <small>Mastered</small>
           </button>
         </div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.85rem; gap:0.5rem; flex-wrap:wrap;">
-          <button type="button" class="btn-secondary" data-action="prev-anki-card">← Previous Card</button>
-          <span style="font-size:0.78rem; color:var(--ink-muted); font-weight:700;">
-            Session Reviewed: ${appState.deckSessionReviewed} cards (Unlimited · No Timer)
-          </span>
-          <button type="button" class="btn-secondary" data-action="next-anki-card">Skip / Next →</button>
+        <div class="anki-nav-grid">
+          <button type="button" class="btn-anki-rate btn-anki-nav" data-action="prev-anki-card">
+            <span>⬅ Back (前へ)</span>
+            <small>Previous card</small>
+          </button>
+          <button type="button" class="btn-anki-rate btn-anki-nav" data-action="next-anki-card">
+            <span>Skip (次へ) ➡</span>
+            <small>Next card</small>
+          </button>
         </div>
       </div>
     `;
   }
 
   return `
-    <div class="hero-banner">
-      <div class="hero-top">
-        <div>
-          <span class="hero-eyebrow">UNLIMITED ANKI-STYLE REVIEW · NO TIMER · NO DAILY LIMIT</span>
-          <h1 class="hero-title">JLPT ${appState.level} Exam Word & Grammar Deck（全${fullDeck.length}語）</h1>
-          <p class="hero-desc">
-            Flip through all vocabulary, kanji reading traps, synonyms, usage words, and grammar patterns from the 34 ${appState.level} exam papers. Tap any word in the example sentence to open <b>jpdb.io</b>.
-          </p>
-        </div>
-        <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
-          <button class="btn-secondary" data-action="shuffle-deck">🔀 Shuffle Deck</button>
-          <button class="btn-secondary" data-action="toggle-hide-mastered">
-            ${appState.deckHideMastered ? '👁 Hide Mastered: ON' : '👁 Hide Mastered: OFF'}
-          </button>
-        </div>
+    <div class="deck-viewport">
+      <div class="deck-filter-bar">
+        <button type="button" class="deck-filter-pill ${
+          appState.deckFilter === 'all' ? 'active' : ''
+        }" data-action="set-deck-filter" data-filter="all">
+          📚 All (${fullDeck.length})
+        </button>
+        <button type="button" class="deck-filter-pill ${
+          appState.deckFilter === 'weak' ? 'active' : ''
+        }" data-action="set-deck-filter" data-filter="weak">
+          🔥 Weak (${strugglingCount})
+        </button>
+        <button type="button" class="deck-filter-pill ${
+          appState.deckFilter === 'kanji' ? 'active' : ''
+        }" data-action="set-deck-filter" data-filter="kanji">
+          漢字 Kanji
+        </button>
+        <button type="button" class="deck-filter-pill ${
+          appState.deckFilter === 'adverb_grammar' ? 'active' : ''
+        }" data-action="set-deck-filter" data-filter="adverb_grammar">
+          ✨ Grammar/Adv
+        </button>
+        <button type="button" class="deck-filter-pill" data-action="shuffle-deck">
+          🔀 Shuffle
+        </button>
+        <button type="button" class="deck-filter-pill ${
+          appState.deckHideMastered ? 'active' : ''
+        }" data-action="toggle-hide-mastered">
+          ${appState.deckHideMastered ? '👁 Hide Mastered' : '👁 Show All'}
+        </button>
       </div>
 
-      <div class="hero-stats">
-        <div class="stat-pill">
-          <div class="stat-label">TOTAL ${appState.level} CARDS</div>
-          <div class="stat-val">${fullDeck.length}</div>
-        </div>
-        <div class="stat-pill">
-          <div class="stat-label">🔥 WEAK / MISSED</div>
-          <div class="stat-val" style="color:var(--fail);">${strugglingCount}</div>
-        </div>
-        <div class="stat-pill">
-          <div class="stat-label">🟡 REVIEWING</div>
-          <div class="stat-val" style="color:var(--accent);">${reviewingCount}</div>
-        </div>
-        <div class="stat-pill">
-          <div class="stat-label">🟢 MASTERED</div>
-          <div class="stat-val" style="color:var(--pass);">${masteredCount}</div>
-        </div>
-      </div>
+      ${cardStageHtml}
     </div>
-
-    <div class="deck-filter-bar">
-      <button type="button" class="deck-filter-pill ${
-        appState.deckFilter === 'all' ? 'active' : ''
-      }" data-action="set-deck-filter" data-filter="all">
-        📚 All Exam Words (${fullDeck.length})
-      </button>
-      <button type="button" class="deck-filter-pill ${
-        appState.deckFilter === 'weak' ? 'active' : ''
-      }" data-action="set-deck-filter" data-filter="weak">
-        🔥 Weak & Missed in Papers (${strugglingCount})
-      </button>
-      <button type="button" class="deck-filter-pill ${
-        appState.deckFilter === 'kanji' ? 'active' : ''
-      }" data-action="set-deck-filter" data-filter="kanji">
-        漢字 Kanji Reading & Lookalikes
-      </button>
-      <button type="button" class="deck-filter-pill ${
-        appState.deckFilter === 'adverb_grammar' ? 'active' : ''
-      }" data-action="set-deck-filter" data-filter="adverb_grammar">
-        ✨ Adverbs, Usage & Grammar
-      </button>
-    </div>
-
-    ${cardStageHtml}
   `;
 }
 
@@ -1847,7 +1823,7 @@ function renderApp() {
       </div>
     </header>
 
-    <main class="main-container">
+    <main class="main-container ${appState.activeTab === 'deck' ? 'is-deck-tab' : ''}">
       ${mainContent}
     </main>
 
