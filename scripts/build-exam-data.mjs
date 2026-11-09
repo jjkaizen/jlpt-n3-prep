@@ -1153,13 +1153,11 @@ function buildDeckForLevel(level, levelExams, synonymsBank, usagesBank, grammarB
   let cardSeq = 1;
 
   const addCard = ({ w, r, m, cat, day, qNum, ja, en, note }) => {
-    const cleanW = String(w || '').trim();
-    if (!cleanW) return;
-    const normKey = cleanW.replace(/^[〜～\s]+/, '');
-    const readMeanKey = `${String(r || cleanW).trim()}::${String(m || '').split(';')[0].trim().toLowerCase()}`;
-    if (seenWords.has(normKey) || (m && seenWords.has(readMeanKey))) return;
-    seenWords.add(normKey);
-    if (m) seenWords.add(readMeanKey);
+    const cleanW = String(w || '').replace(/^[〜～\s]+/, '').trim();
+    // Only include words containing Kanji, and deduplicate strictly on the Kanji word itself
+    if (!cleanW || !/[\u4e00-\u9faf]/.test(cleanW)) return;
+    if (seenWords.has(cleanW)) return;
+    seenWords.add(cleanW);
     cards.push({
       id: `${level.toLowerCase()}-c${cardSeq++}`,
       w: cleanW,

@@ -154,8 +154,8 @@ function isCardMissedInExams(card) {
   return daySt.answers?.[card.qNum] !== qObj.answer;
 }
 
-function isKatakanaOnly(word) {
-  return /^[\u30a0-\u30ffー・\s]+$/.test(String(word || '').trim());
+function hasKatakana(word) {
+  return /[\u30a0-\u30ff]/.test(String(word || ''));
 }
 
 function rebuildDeckQueue(shuffle = false) {
@@ -169,12 +169,11 @@ function rebuildDeckQueue(shuffle = false) {
 
   const seenInQueue = new Set();
   let filtered = fullDeck.filter(c => {
-    const normW = String(c.w || '').replace(/^[〜～\s]+/, '');
-    if (seenInQueue.has(normW)) return false;
-    seenInQueue.add(normW);
-    if (appState.deckHideKatakana && isKatakanaOnly(c.w)) {
-      return false;
-    }
+    const cleanKanjiWord = String(c.w || '').replace(/^[〜～\s]+/, '').trim();
+    if (!cleanKanjiWord || !/[\u4e00-\u9faf]/.test(cleanKanjiWord)) return false;
+    if (appState.deckHideKatakana && hasKatakana(cleanKanjiWord)) return false;
+    if (seenInQueue.has(cleanKanjiWord)) return false;
+    seenInQueue.add(cleanKanjiWord);
     const st = getCardStatus(c.id);
     if (appState.deckHideMastered && st === 'mastered' && appState.deckFilter !== 'weak') {
       return false;
@@ -191,12 +190,12 @@ function rebuildDeckQueue(shuffle = false) {
     return true;
   });
 
-  // Sort alphabetically by reading (あ→ん / A→Z) unless shuffled
+  // Sort on the Kanji characters of the word (c.w) so identical Kanji are grouped together
   if (!shuffle) {
     filtered = [...filtered].sort((a, b) => {
-      const ra = String(a.r || a.w || '').replace(/^[〜～\s]+/, '');
-      const rb = String(b.r || b.w || '').replace(/^[〜～\s]+/, '');
-      const cmp = ra.localeCompare(rb, 'ja');
+      const ka = String(a.w || '').replace(/^[^\u4e00-\u9faf]+/, '');
+      const kb = String(b.w || '').replace(/^[^\u4e00-\u9faf]+/, '');
+      const cmp = ka.localeCompare(kb, 'ja');
       if (cmp !== 0) return cmp;
       return String(a.w || '').localeCompare(String(b.w || ''), 'ja');
     });
