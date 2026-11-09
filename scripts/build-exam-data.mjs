@@ -1155,9 +1155,11 @@ function buildDeckForLevel(level, levelExams, synonymsBank, usagesBank, grammarB
   const addCard = ({ w, r, m, cat, day, qNum, ja, en, note }) => {
     const cleanW = String(w || '').trim();
     if (!cleanW) return;
-    const dedupeKey = `${cleanW}::${cat}`;
-    if (seenWords.has(dedupeKey) && !day) return;
-    seenWords.add(dedupeKey);
+    const normKey = cleanW.replace(/^[〜～\s]+/, '');
+    const readMeanKey = `${String(r || cleanW).trim()}::${String(m || '').split(';')[0].trim().toLowerCase()}`;
+    if (seenWords.has(normKey) || (m && seenWords.has(readMeanKey))) return;
+    seenWords.add(normKey);
+    if (m) seenWords.add(readMeanKey);
     cards.push({
       id: `${level.toLowerCase()}-c${cardSeq++}`,
       w: cleanW,

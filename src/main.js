@@ -167,7 +167,11 @@ function rebuildDeckQueue(shuffle = false) {
     return;
   }
 
+  const seenInQueue = new Set();
   let filtered = fullDeck.filter(c => {
+    const normW = String(c.w || '').replace(/^[〜～\s]+/, '');
+    if (seenInQueue.has(normW)) return false;
+    seenInQueue.add(normW);
     if (appState.deckHideKatakana && isKatakanaOnly(c.w)) {
       return false;
     }
@@ -2024,10 +2028,11 @@ document.addEventListener('click', event => {
 
     if (rating === 'again') {
       setCardStatus(curCard.id, 'struggling');
-      // Re-insert this card 6 positions ahead so the user sees it again soon
-      const reinsertPos = Math.min(q.length, idx + 6);
+      // Move this card 6 positions ahead (without duplicating it in the array!)
+      q.splice(idx, 1);
+      const reinsertPos = Math.min(q.length, idx + 5);
       q.splice(reinsertPos, 0, curCard);
-      appState.deckCursor = idx + 1;
+      if (q.length > 0) appState.deckCursor = idx % q.length;
     } else if (rating === 'good') {
       setCardStatus(curCard.id, 'reviewing');
       appState.deckCursor = (idx + 1) % q.length;
