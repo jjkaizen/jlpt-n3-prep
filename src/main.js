@@ -1616,7 +1616,14 @@ function renderWordDeckScreen() {
       .map(c => {
         const st = getCardStatus(c.id);
         const isWeak = st === 'struggling' || isCardMissedInExams(c);
-        const rowCls = st === 'mastered' ? 'row-mastered' : isWeak ? 'row-struggling' : '';
+        const rowCls =
+          st === 'mastered'
+            ? 'row-mastered'
+            : isWeak
+            ? 'row-struggling'
+            : st === 'reviewing'
+            ? 'row-reviewing'
+            : '';
         const readCell = appState.tableMaskReading
           ? `<span class="masked-cell" data-action="reveal-masked-cell">${esc(c.r)}</span>`
           : esc(c.r);
@@ -1997,14 +2004,17 @@ document.addEventListener('click', event => {
     const cid = actionEl.getAttribute('data-cid');
     const st = actionEl.getAttribute('data-status');
     if (cid && st) {
-      setCardStatus(cid, st);
+      const currentSt = getCardStatus(cid);
+      const nextSt = currentSt === st ? 'new' : st;
+      setCardStatus(cid, nextSt);
       const tr = document.getElementById(`tbl-row-${cid}`);
       if (tr) {
-        tr.classList.remove('row-struggling', 'row-mastered');
-        if (st === 'struggling') tr.classList.add('row-struggling');
-        if (st === 'mastered') tr.classList.add('row-mastered');
+        tr.classList.remove('row-struggling', 'row-reviewing', 'row-mastered');
+        if (nextSt === 'struggling') tr.classList.add('row-struggling');
+        else if (nextSt === 'reviewing') tr.classList.add('row-reviewing');
+        else if (nextSt === 'mastered') tr.classList.add('row-mastered');
         tr.querySelectorAll('.mini-rate-btn').forEach(b => {
-          b.classList.toggle('active', b.getAttribute('data-status') === st);
+          b.classList.toggle('active', b.getAttribute('data-status') === nextSt);
         });
       }
     }

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jlpt-n3-daily-v10';
+const CACHE_NAME = 'jlpt-n3-daily-v11';
 
 self.addEventListener('install', event => {
   self.skipWaiting();

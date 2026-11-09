@@ -1535,12 +1535,18 @@ body {
 }
 
 .deck-compact-table tbody tr.row-struggling {
-  background: #fef2f2;
+  background-color: #fee2e2 !important;
+  border-left: 4px solid #dc2626;
+}
+
+.deck-compact-table tbody tr.row-reviewing {
+  background-color: #fef3c7 !important;
+  border-left: 4px solid #d97706;
 }
 
 .deck-compact-table tbody tr.row-mastered {
-  background: #f0fdf4;
-  opacity: 0.75;
+  background-color: #dcfce7 !important;
+  border-left: 4px solid #16a34a;
 }
 
 .deck-compact-table td {
