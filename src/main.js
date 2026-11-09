@@ -187,19 +187,14 @@ function rebuildDeckQueue(shuffle = false) {
     return true;
   });
 
-  // Sort so struggling / missed-in-exam cards come first, then unseen exam cards, then reviewing
+  // Sort alphabetically by reading (あ→ん / A→Z) unless shuffled
   if (!shuffle) {
-    filtered.sort((a, b) => {
-      const sa = getCardStatus(a.id);
-      const sb = getCardStatus(b.id);
-      const scoreCard = (c, s) => {
-        if (s === 'struggling' || isCardMissedInExams(c)) return 0;
-        if (s === 'new' && c.day) return 1;
-        if (s === 'new') return 2;
-        if (s === 'reviewing') return 3;
-        return 4;
-      };
-      return scoreCard(a, sa) - scoreCard(b, sb);
+    filtered = [...filtered].sort((a, b) => {
+      const ra = String(a.r || a.w || '').replace(/^[〜～\s]+/, '');
+      const rb = String(b.r || b.w || '').replace(/^[〜～\s]+/, '');
+      const cmp = ra.localeCompare(rb, 'ja');
+      if (cmp !== 0) return cmp;
+      return String(a.w || '').localeCompare(String(b.w || ''), 'ja');
     });
   } else {
     filtered = [...filtered];
