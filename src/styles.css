@@ -1494,3 +1494,113 @@ body {
   color: #18181b;
   border-color: #18181b;
 }
+
+/* Compact Table View inside Word Deck */
+.deck-table-container {
+  background: var(--bg-paper);
+  border: 2px solid #18181b;
+  border-radius: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  box-shadow: 3px 3px 0px #18181b;
+}
+
+.deck-compact-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.deck-compact-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #18181b;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.42rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.deck-compact-table tbody tr {
+  border-bottom: 1px solid var(--border-soft);
+  background: #ffffff;
+}
+
+.deck-compact-table tbody tr:nth-child(even) {
+  background: #faf8f2;
+}
+
+.deck-compact-table tbody tr.row-struggling {
+  background: #fef2f2;
+}
+
+.deck-compact-table tbody tr.row-mastered {
+  background: #f0fdf4;
+  opacity: 0.75;
+}
+
+.deck-compact-table td {
+  padding: 0.36rem 0.48rem;
+  vertical-align: middle;
+  line-height: 1.35;
+}
+
+.td-word-cell {
+  font-family: var(--font-serif);
+  font-weight: 900;
+  font-size: 0.98rem;
+  white-space: nowrap;
+}
+
+.td-reading-cell {
+  color: #b45309;
+  font-weight: 700;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.td-meaning-cell {
+  color: #27272a;
+  font-size: 0.8rem;
+}
+
+.masked-cell {
+  background: #e4e4e7;
+  color: transparent;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  user-select: none;
+  display: inline-block;
+}
+
+.masked-cell.revealed {
+  background: transparent;
+  color: inherit;
+}
+
+.mini-rate-group {
+  display: inline-flex;
+  gap: 0.22rem;
+  white-space: nowrap;
+}
+
+.mini-rate-btn {
+  border: 1px solid #d4d4d8;
+  background: #ffffff;
+  border-radius: 4px;
+  padding: 0.18rem 0.34rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.mini-rate-btn.active {
+  border-color: #18181b;
+  background: #18181b;
+  color: #ffffff;
+}

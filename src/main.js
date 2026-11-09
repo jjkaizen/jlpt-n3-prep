@@ -65,6 +65,10 @@ const appState = {
   // Unlimited Anki Deck Session State
   deckFilter: 'all', // 'all' | 'weak' | 'kanji' | 'adverb_grammar'
   deckHideMastered: true,
+  deckHideKatakana: true,
+  deckViewMode: 'card', // 'card' | 'table'
+  tableMaskReading: false,
+  tableMaskMeaning: false,
   deckQueue: [], // array of card objects
   deckCursor: 0,
   deckFlipped: false,
@@ -150,6 +154,10 @@ function isCardMissedInExams(card) {
   return daySt.answers?.[card.qNum] !== qObj.answer;
 }
 
+function isKatakanaOnly(word) {
+  return /^[\u30a0-\u30ffー・\s]+$/.test(String(word || '').trim());
+}
+
 function rebuildDeckQueue(shuffle = false) {
   const fullDeck = getCurrentDeck();
   if (!fullDeck.length) {
@@ -160,6 +168,9 @@ function rebuildDeckQueue(shuffle = false) {
   }
 
   let filtered = fullDeck.filter(c => {
+    if (appState.deckHideKatakana && isKatakanaOnly(c.w)) {
+      return false;
+    }
     const st = getCardStatus(c.id);
     if (appState.deckHideMastered && st === 'mastered' && appState.deckFilter !== 'weak') {
       return false;
@@ -1586,19 +1597,71 @@ function renderWordDeckScreen() {
   let cardStageHtml = '';
   if (!curCard) {
     cardStageHtml = `
-      <div class="hero-banner" style="text-align:center; padding:2rem 1.2rem;">
+      <div class="hero-banner" style="text-align:center; padding:1.5rem 1rem;">
         <h2 style="margin:0 0 0.5rem;">🎉 No cards match this filter right now!</h2>
-        <p style="color:var(--ink-muted); font-size:0.9rem; margin:0 0 1rem;">
+        <p style="color:var(--ink-muted); font-size:0.86rem; margin:0 0 1rem;">
           ${
             appState.deckFilter === 'weak'
-              ? 'You have no cards marked "Again / Struggling" or missed in completed papers yet. Switch to "All Exam Words" or "Kanji & Readings" to start reviewing!'
-              : 'All cards in this view are marked Mastered. Uncheck "Hide Mastered" or switch filters to review them again.'
+              ? 'You have no cards marked "Again / Struggling" or missed in completed papers yet. Switch to "All" or "Kanji" to start reviewing!'
+              : 'All cards in this view are filtered out. Try toggling "Hide Mastered" or "Hide Katakana".'
           }
         </p>
         <div style="display:flex; gap:0.5rem; justify-content:center; flex-wrap:wrap;">
           <button class="btn-primary" data-action="set-deck-filter" data-filter="all">Show All Exam Words</button>
-          <button class="btn-secondary" data-action="toggle-hide-mastered">Show Mastered Cards Too</button>
+          <button class="btn-secondary" data-action="toggle-hide-mastered">Toggle Hide Mastered</button>
         </div>
+      </div>
+    `;
+  } else if (appState.deckViewMode === 'table') {
+    const rowsHtml = queue
+      .map(c => {
+        const st = getCardStatus(c.id);
+        const isWeak = st === 'struggling' || isCardMissedInExams(c);
+        const rowCls = st === 'mastered' ? 'row-mastered' : isWeak ? 'row-struggling' : '';
+        const readCell = appState.tableMaskReading
+          ? `<span class="masked-cell" data-action="reveal-masked-cell">${esc(c.r)}</span>`
+          : esc(c.r);
+        const meanCell = appState.tableMaskMeaning
+          ? `<span class="masked-cell" data-action="reveal-masked-cell">${esc(c.m)}</span>`
+          : esc(c.m);
+        return `
+          <tr class="${rowCls}" id="tbl-row-${c.id}">
+            <td class="td-word-cell">
+              <a class="jp-word" href="${jpdbUrl(c.w)}" target="_blank" rel="noopener noreferrer">${esc(c.w)}</a>
+            </td>
+            <td class="td-reading-cell">${readCell}</td>
+            <td class="td-meaning-cell">${meanCell}</td>
+            <td style="text-align:right; width:86px;">
+              <div class="mini-rate-group">
+                <button type="button" class="mini-rate-btn ${isWeak ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-status="struggling" title="Mark Weak / Again">🔴</button>
+                <button type="button" class="mini-rate-btn ${st === 'reviewing' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-status="reviewing" title="Mark Reviewing / Good">🟡</button>
+                <button type="button" class="mini-rate-btn ${st === 'mastered' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-status="mastered" title="Mark Mastered / Easy">🟢</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    cardStageHtml = `
+      <div class="deck-table-container">
+        <table class="deck-compact-table">
+          <thead>
+            <tr>
+              <th>単語 (${queue.length})</th>
+              <th style="cursor:pointer;" data-action="toggle-mask-reading" title="Tap to hide/show readings for self-test">
+                読み ${appState.tableMaskReading ? '🙈(Tap)' : '👁'}
+              </th>
+              <th style="cursor:pointer;" data-action="toggle-mask-meaning" title="Tap to hide/show meanings for self-test">
+                英語の意味 ${appState.tableMaskMeaning ? '🙈(Tap)' : '👁'}
+              </th>
+              <th style="text-align:right;">状態</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
       </div>
     `;
   } else {
@@ -1709,9 +1772,14 @@ function renderWordDeckScreen() {
     <div class="deck-viewport">
       <div class="deck-filter-bar">
         <button type="button" class="deck-filter-pill ${
+          appState.deckViewMode === 'table' ? 'active' : ''
+        }" data-action="toggle-deck-view-mode">
+          ${appState.deckViewMode === 'table' ? '🃏 Switch to Card View' : '📋 Compact Table View'}
+        </button>
+        <button type="button" class="deck-filter-pill ${
           appState.deckFilter === 'all' ? 'active' : ''
         }" data-action="set-deck-filter" data-filter="all">
-          📚 All (${fullDeck.length})
+          📚 All (${queue.length})
         </button>
         <button type="button" class="deck-filter-pill ${
           appState.deckFilter === 'weak' ? 'active' : ''
@@ -1728,13 +1796,18 @@ function renderWordDeckScreen() {
         }" data-action="set-deck-filter" data-filter="adverb_grammar">
           ✨ Grammar/Adv
         </button>
-        <button type="button" class="deck-filter-pill" data-action="shuffle-deck">
-          🔀 Shuffle
+        <button type="button" class="deck-filter-pill ${
+          appState.deckHideKatakana ? 'active' : ''
+        }" data-action="toggle-hide-katakana">
+          ${appState.deckHideKatakana ? 'ア No Katakana: ON' : 'ア Katakana: Shown'}
         </button>
         <button type="button" class="deck-filter-pill ${
           appState.deckHideMastered ? 'active' : ''
         }" data-action="toggle-hide-mastered">
           ${appState.deckHideMastered ? '👁 Hide Mastered' : '👁 Show All'}
+        </button>
+        <button type="button" class="deck-filter-pill" data-action="shuffle-deck">
+          🔀 Shuffle
         </button>
       </div>
 
@@ -1888,6 +1961,54 @@ document.addEventListener('click', event => {
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
     renderApp();
+    return;
+  }
+
+  if (action === 'toggle-deck-view-mode') {
+    appState.deckViewMode = appState.deckViewMode === 'card' ? 'table' : 'card';
+    renderApp();
+    return;
+  }
+
+  if (action === 'toggle-hide-katakana') {
+    appState.deckHideKatakana = !appState.deckHideKatakana;
+    rebuildDeckQueue(false);
+    renderApp();
+    return;
+  }
+
+  if (action === 'toggle-mask-reading') {
+    appState.tableMaskReading = !appState.tableMaskReading;
+    renderApp();
+    return;
+  }
+
+  if (action === 'toggle-mask-meaning') {
+    appState.tableMaskMeaning = !appState.tableMaskMeaning;
+    renderApp();
+    return;
+  }
+
+  if (action === 'reveal-masked-cell') {
+    actionEl.classList.toggle('revealed');
+    return;
+  }
+
+  if (action === 'rate-table-row') {
+    const cid = actionEl.getAttribute('data-cid');
+    const st = actionEl.getAttribute('data-status');
+    if (cid && st) {
+      setCardStatus(cid, st);
+      const tr = document.getElementById(`tbl-row-${cid}`);
+      if (tr) {
+        tr.classList.remove('row-struggling', 'row-mastered');
+        if (st === 'struggling') tr.classList.add('row-struggling');
+        if (st === 'mastered') tr.classList.add('row-mastered');
+        tr.querySelectorAll('.mini-rate-btn').forEach(b => {
+          b.classList.toggle('active', b.getAttribute('data-status') === st);
+        });
+      }
+    }
     return;
   }
 
