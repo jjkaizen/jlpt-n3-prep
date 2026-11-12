@@ -64,7 +64,7 @@ const appState = {
   showBackupModal: false,
   // Unlimited Anki Deck Session State
   deckFilter: 'all', // 'all' | 'weak' | 'kanji' | 'adverb_grammar'
-  deckHideMastered: true,
+  deckHideMastered: false,
   deckHideKatakana: true,
   deckViewMode: 'card', // 'card' | 'table'
   tableMaskReading: false,
@@ -128,18 +128,33 @@ async function ensureDeckLoaded(level) {
   renderApp();
 }
 
-function getCardStatus(cardId) {
+function getCardStatus(cardOrWord) {
   if (!appState.store.deck) appState.store.deck = {};
-  return appState.store.deck[cardId]?.status || 'new'; // 'new' | 'struggling' | 'reviewing' | 'mastered'
+  if (cardOrWord && typeof cardOrWord === 'object') {
+    const wKey = String(cardOrWord.w || '').trim();
+    return (
+      appState.store.deck[wKey]?.status ||
+      appState.store.deck[cardOrWord.id]?.status ||
+      'new'
+    );
+  }
+  return appState.store.deck[cardOrWord]?.status || 'new';
 }
 
-function setCardStatus(cardId, status) {
+function setCardStatus(cardOrWord, status) {
   if (!appState.store.deck) appState.store.deck = {};
-  const prev = appState.store.deck[cardId] || { reps: 0 };
-  appState.store.deck[cardId] = {
+  const wKey =
+    cardOrWord && typeof cardOrWord === 'object'
+      ? String(cardOrWord.w || '').trim()
+      : String(cardOrWord || '').trim();
+  const prev = appState.store.deck[wKey] || { reps: 0 };
+  appState.store.deck[wKey] = {
     status,
     reps: (prev.reps || 0) + 1
   };
+  if (cardOrWord && typeof cardOrWord === 'object' && cardOrWord.id) {
+    appState.store.deck[cardOrWord.id] = appState.store.deck[wKey];
+  }
   saveStore();
 }
 
@@ -174,8 +189,14 @@ function rebuildDeckQueue(shuffle = false) {
     if (appState.deckHideKatakana && hasKatakana(cleanKanjiWord)) return false;
     if (seenInQueue.has(cleanKanjiWord)) return false;
     seenInQueue.add(cleanKanjiWord);
-    const st = getCardStatus(c.id);
-    if (appState.deckHideMastered && st === 'mastered' && appState.deckFilter !== 'weak') {
+    const st = getCardStatus(c);
+    // In Card View, if Hide Mastered is ON, skip mastered cards; in Table View, keep all rated rows visible unless Hide Mastered is explicitly ON
+    if (
+      appState.deckHideMastered &&
+      st === 'mastered' &&
+      appState.deckFilter !== 'weak' &&
+      appState.deckViewMode !== 'table'
+    ) {
       return false;
     }
     if (appState.deckFilter === 'weak') {
@@ -1583,7 +1604,7 @@ function renderWordDeckScreen() {
   let strugglingCount = 0;
   let reviewingCount = 0;
   for (const c of fullDeck) {
-    const st = getCardStatus(c.id);
+    const st = getCardStatus(c);
     if (st === 'mastered') masteredCount++;
     else if (st === 'struggling' || isCardMissedInExams(c)) strugglingCount++;
     else if (st === 'reviewing') reviewingCount++;
@@ -1613,7 +1634,7 @@ function renderWordDeckScreen() {
   } else if (appState.deckViewMode === 'table') {
     const rowsHtml = queue
       .map(c => {
-        const st = getCardStatus(c.id);
+        const st = getCardStatus(c);
         const isWeak = st === 'struggling' || isCardMissedInExams(c);
         const rowCls =
           st === 'mastered'
@@ -1631,16 +1652,20 @@ function renderWordDeckScreen() {
           : esc(c.m);
         return `
           <tr class="${rowCls}" id="tbl-row-${c.id}">
-            <td class="td-word-cell">
-              <a class="jp-word" href="${jpdbUrl(c.w)}" target="_blank" rel="noopener noreferrer">${esc(c.w)}</a>
+            <td>
+              <div class="td-word-stack">
+                <span class="td-word-kanji">
+                  <a class="jp-word" href="${jpdbUrl(c.w)}" target="_blank" rel="noopener noreferrer">${esc(c.w)}</a>
+                </span>
+                <span class="td-word-reading">${readCell}</span>
+              </div>
             </td>
-            <td class="td-reading-cell">${readCell}</td>
             <td class="td-meaning-cell">${meanCell}</td>
-            <td style="text-align:right; width:86px;">
+            <td style="text-align:right;">
               <div class="mini-rate-group">
-                <button type="button" class="mini-rate-btn ${isWeak ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-status="struggling" title="Mark Weak / Again">🔴</button>
-                <button type="button" class="mini-rate-btn ${st === 'reviewing' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-status="reviewing" title="Mark Reviewing / Good">🟡</button>
-                <button type="button" class="mini-rate-btn ${st === 'mastered' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-status="mastered" title="Mark Mastered / Easy">🟢</button>
+                <button type="button" class="mini-rate-btn ${isWeak ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-word="${esc(c.w)}" data-status="struggling" title="Red · Weak">🔴</button>
+                <button type="button" class="mini-rate-btn ${st === 'reviewing' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-word="${esc(c.w)}" data-status="reviewing" title="Amber · Good">🟡</button>
+                <button type="button" class="mini-rate-btn ${st === 'mastered' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-word="${esc(c.w)}" data-status="mastered" title="Green · Mastered">🟢</button>
               </div>
             </td>
           </tr>
@@ -1653,14 +1678,13 @@ function renderWordDeckScreen() {
         <table class="deck-compact-table">
           <thead>
             <tr>
-              <th>単語 (${queue.length})</th>
-              <th style="cursor:pointer;" data-action="toggle-mask-reading" title="Tap to hide/show readings for self-test">
-                読み ${appState.tableMaskReading ? '🙈(Tap)' : '👁'}
+              <th class="col-word" style="cursor:pointer;" data-action="toggle-mask-reading" title="Tap to hide/show readings">
+                漢字 / 読み ${appState.tableMaskReading ? '🙈' : '👁'}
               </th>
-              <th style="cursor:pointer;" data-action="toggle-mask-meaning" title="Tap to hide/show meanings for self-test">
-                英語の意味 ${appState.tableMaskMeaning ? '🙈(Tap)' : '👁'}
+              <th class="col-meaning" style="cursor:pointer;" data-action="toggle-mask-meaning" title="Tap to hide/show meanings">
+                意味 (${queue.length}) ${appState.tableMaskMeaning ? '🙈' : '👁'}
               </th>
-              <th style="text-align:right;">状態</th>
+              <th class="col-rate">🔴 🟡 🟢</th>
             </tr>
           </thead>
           <tbody>
@@ -1670,7 +1694,7 @@ function renderWordDeckScreen() {
       </div>
     `;
   } else {
-    const cardStatus = getCardStatus(curCard.id);
+    const cardStatus = getCardStatus(curCard);
     const missedInPaper = isCardMissedInExams(curCard);
     const sourceLabel = curCard.day
       ? `${appState.level} · Day ${curCard.day} Paper (Q${curCard.qNum})`
@@ -1970,7 +1994,13 @@ document.addEventListener('click', event => {
   }
 
   if (action === 'toggle-deck-view-mode') {
+    const prevCursorWord = appState.deckQueue[appState.deckCursor % Math.max(1, appState.deckQueue.length)]?.w;
     appState.deckViewMode = appState.deckViewMode === 'card' ? 'table' : 'card';
+    rebuildDeckQueue(false);
+    if (prevCursorWord && appState.deckQueue.length) {
+      const foundIdx = appState.deckQueue.findIndex(c => c.w === prevCursorWord);
+      if (foundIdx !== -1) appState.deckCursor = foundIdx;
+    }
     renderApp();
     return;
   }
@@ -2001,11 +2031,13 @@ document.addEventListener('click', event => {
 
   if (action === 'rate-table-row') {
     const cid = actionEl.getAttribute('data-cid');
+    const word = actionEl.getAttribute('data-word');
     const st = actionEl.getAttribute('data-status');
     if (cid && st) {
-      const currentSt = getCardStatus(cid);
+      const cardObj = { id: cid, w: word || cid };
+      const currentSt = getCardStatus(cardObj);
       const nextSt = currentSt === st ? 'new' : st;
-      setCardStatus(cid, nextSt);
+      setCardStatus(cardObj, nextSt);
       const tr = document.getElementById(`tbl-row-${cid}`);
       if (tr) {
         tr.classList.remove('row-struggling', 'row-reviewing', 'row-mastered');
@@ -2036,17 +2068,16 @@ document.addEventListener('click', event => {
     appState.deckSessionReviewed++;
 
     if (rating === 'again') {
-      setCardStatus(curCard.id, 'struggling');
-      // Move this card 6 positions ahead (without duplicating it in the array!)
+      setCardStatus(curCard, 'struggling');
       q.splice(idx, 1);
       const reinsertPos = Math.min(q.length, idx + 5);
       q.splice(reinsertPos, 0, curCard);
       if (q.length > 0) appState.deckCursor = idx % q.length;
     } else if (rating === 'good') {
-      setCardStatus(curCard.id, 'reviewing');
+      setCardStatus(curCard, 'reviewing');
       appState.deckCursor = (idx + 1) % q.length;
     } else if (rating === 'easy') {
-      setCardStatus(curCard.id, 'mastered');
+      setCardStatus(curCard, 'mastered');
       if (appState.deckHideMastered && appState.deckFilter !== 'weak') {
         q.splice(idx, 1);
         if (q.length > 0) {
