@@ -1,23 +1,23 @@
-(function(){const i=document.createElement("link").relList;if(i&&i.supports&&i.supports("modulepreload"))return;for(const l of document.querySelectorAll('link[rel="modulepreload"]'))t(l);new MutationObserver(l=>{for(const u of l)if(u.type==="childList")for(const p of u.addedNodes)p.tagName==="LINK"&&p.rel==="modulepreload"&&t(p)}).observe(document,{childList:!0,subtree:!0});function n(l){const u={};return l.integrity&&(u.integrity=l.integrity),l.referrerPolicy&&(u.referrerPolicy=l.referrerPolicy),l.crossOrigin==="use-credentials"?u.credentials="include":l.crossOrigin==="anonymous"?u.credentials="omit":u.credentials="same-origin",u}function t(l){if(l.ep)return;l.ep=!0;const u=n(l);fetch(l.href,u)}})();const X="jlpt_selected_level",K={N3:"jlpt_n3_daily_state_v1",N4:"jlpt_n4_daily_state_v1"};function ue(){try{const i=(new URLSearchParams(window.location.search).get("level")||"").toUpperCase();if(i==="N3"||i==="N4")return localStorage.setItem(X,i),i;const n=(localStorage.getItem(X)||"").toUpperCase();if(n==="N3"||n==="N4")return n}catch{}return"N3"}"serviceWorker"in navigator&&window.addEventListener("load",()=>{navigator.serviceWorker.register("./sw.js").catch(()=>{})});function oe(a){try{const i=localStorage.getItem(K[a]||K.N3);if(i){const n=JSON.parse(i);if(n&&typeof n=="object"&&n.days)return n}}catch(i){console.warn("Failed to parse saved state:",i)}return{days:{}}}const ee=ue(),e={level:ee,examsByLevel:{},decksByLevel:{},loadingExams:!0,loadingDeck:!1,store:oe(ee),activeTab:"daily",currentExamDay:null,timerPaused:!1,timerInterval:null,showJumpDrawer:!1,openTranscripts:{},playingQuestion:null,activeWordPopup:null,showBackupModal:!1,deckFilter:"all",deckHideMastered:!1,deckHideKatakana:!0,deckViewMode:"card",tableMaskReading:!1,tableMaskMeaning:!1,deckQueue:[],deckCursor:0,deckFlipped:!1,deckSessionReviewed:0};function B(){return e.examsByLevel[e.level]||[]}function re(){return e.decksByLevel[e.level]||[]}function Z(){return e.level==="N4"?90:95}async function le(a){if(e.examsByLevel[a]){e.loadingExams=!1;return}e.loadingExams=!0,b();try{const t=await(await fetch(a==="N4"?"./data/exams-n4.json":"./data/exams-n3.json")).json();e.examsByLevel[a]=t}catch(i){console.error("Failed to load exams for",a,i),e.examsByLevel[a]=[]}e.loadingExams=!1,b()}async function te(a){if(e.decksByLevel[a]){e.deckQueue.length||F(!1);return}e.loadingDeck=!0,b();try{const t=await(await fetch(a==="N4"?"./data/deck-n4.json":"./data/deck-n3.json")).json();e.decksByLevel[a]=t}catch(i){console.error("Failed to load deck for",a,i),e.decksByLevel[a]=[]}e.loadingDeck=!1,F(!1),b()}function _(a){var i,n,t;if(e.store.deck||(e.store.deck={}),a&&typeof a=="object"){const l=String(a.w||"").trim();return((i=e.store.deck[l])==null?void 0:i.status)||((n=e.store.deck[a.id])==null?void 0:n.status)||"new"}return((t=e.store.deck[a])==null?void 0:t.status)||"new"}function G(a,i){e.store.deck||(e.store.deck={});const n=a&&typeof a=="object"?String(a.w||"").trim():String(a||"").trim(),t=e.store.deck[n]||{reps:0};e.store.deck[n]={status:i,reps:(t.reps||0)+1},a&&typeof a=="object"&&a.id&&(e.store.deck[a.id]=e.store.deck[n]),N()}function W(a){var u,p;if(!a.day||!a.qNum)return!1;const i=(u=e.store.days)==null?void 0:u[a.day];if(!i||i.status!=="completed")return!1;const t=B().find(s=>s.day===a.day),l=t==null?void 0:t.questions.find(s=>s.qNum===a.qNum);return l?((p=i.answers)==null?void 0:p[a.qNum])!==l.answer:!1}function pe(a){return/[\u30a0-\u30ff]/.test(String(a||""))}function F(a=!1){const i=re();if(!i.length){e.deckQueue=[],e.deckCursor=0,e.deckFlipped=!1;return}const n=new Set;let t=i.filter(l=>{const u=String(l.w||"").replace(/^[〜～\s]+/,"").trim();if(!u||!/[\u4e00-\u9faf]/.test(u)||e.deckHideKatakana&&pe(u)||n.has(u))return!1;n.add(u);const p=_(l);return e.deckHideMastered&&p==="mastered"&&e.deckFilter!=="weak"&&e.deckViewMode!=="table"?!1:e.deckFilter==="weak"?p==="struggling"||W(l):e.deckFilter==="kanji"?l.cat==="kanji":e.deckFilter==="adverb_grammar"?l.cat==="adverb_grammar":!0});if(!a)t=[...t].sort((l,u)=>{const p=String(l.w||"").replace(/^[^\u4e00-\u9faf]+/,""),s=String(u.w||"").replace(/^[^\u4e00-\u9faf]+/,""),r=p.localeCompare(s,"ja");return r!==0?r:String(l.w||"").localeCompare(String(u.w||""),"ja")});else{t=[...t];for(let l=t.length-1;l>0;l--){const u=Math.floor(Math.random()*(l+1));[t[l],t[u]]=[t[u],t[l]]}}e.deckQueue=t,e.deckCursor=0,e.deckFlipped=!1}function N(){try{const a=K[e.level]||K.N3;localStorage.setItem(a,JSON.stringify(e.store))}catch(a){console.warn("Failed to save state:",a)}}function D(a){if(!e.store.days[a])e.store.days[a]={status:"not_started",answers:{},starSlots:{},remainingSeconds:1800,lastQuestion:1,score:null,completedAt:null};else{const i=e.store.days[a];if(i.remainingSeconds>1800&&(i.remainingSeconds=1800),i.lastQuestion>20&&(i.lastQuestion=1),i.answers)for(const n of Object.keys(i.answers))Number(n)>20&&delete i.answers[n]}return e.store.days[a]}function me(a,i){let n=0,t=0,l=0,u=0,p=0,s=0,r=0;for(const h of a.questions){const o=i[h.qNum]===h.answer;if(h.section==="vocab"||h.section==="grammar")t++,o&&n++;else if(h.section==="reading"){p++;const L=h.mondaiId==="r-m4"?12:16;o&&(u++,l+=L)}else h.section==="listening"&&(r++,o&&s++)}const d=Math.round(n/Math.max(1,t)*60),m=Math.min(60,Math.round(l)),y=Math.round(s/Math.max(1,r)*60),v=d+m+y,f=e.level==="N4"?v>=90&&d+m>=38&&y>=19:v>=95&&d>=19&&m>=19&&y>=19;return{langScore:d,readScore:m,listenScore:y,totalScore:v,passed:f,langRaw:n,langTotal:t,readRaw:u,readTotal:p,listenRaw:s,listenTotal:r}}function V(a){const i=Math.max(0,Math.floor(a)),n=Math.floor(i/60),t=i%60;return`${String(n).padStart(2,"0")}:${String(t).padStart(2,"0")}`}function g(a=""){return String(a).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}const ae=typeof Intl<"u"&&Intl.Segmenter?new Intl.Segmenter("ja",{granularity:"word"}):null;function U(a){return`https://jpdb.io/search?q=${encodeURIComponent(a)}&lang=english#a`}function se(a){if(!a)return"";if(!ae)return`<a class="jp-word" href="${U(a)}" target="_blank" rel="noopener noreferrer">${g(a)}</a>`;const i=[...ae.segment(a)];let n="";for(const t of i){const l=t.segment;if(!(t.isWordLike&&/[\u3040-\u30ff\u4e00-\u9faf]/.test(l))){n+=g(l);continue}n+=`<a class="jp-word" href="${U(l)}" target="_blank" rel="noopener noreferrer">${g(l)}</a>`}return n}function j(a){return a?String(a).split(/(<u>[\s\S]*?<\/u>)/g).map(n=>{if(n.startsWith("<u>")&&n.endsWith("</u>")){const t=n.slice(3,-4);return`<u>${se(t)}</u>`}return n.split(`
-`).map(t=>se(t)).join("<br/>")}).join(""):""}function ge(){const a=B();if(!a.length)return 1;for(const i of a)if(D(i.day).status==="in_progress")return i.day;for(const i of a)if(D(i.day).status!=="completed")return i.day;return a.length}let I=null;function ne(){return!document.hidden&&document.hasFocus()}function de(a){let i=0;for(const n of Object.keys(a||{})){const t=Number(n);t>=1&&t<=7?i+=23.3333/7:t>=8&&t<=12?i+=16.6667/5:t>=13&&t<=16?i+=33.3333/4:t>=17&&t<=20&&(i+=26.6667/4)}return Math.min(100,Math.round(i*10)/10)}function ce(a){const i=Math.max(0,1800-a);return i<420?"Target: 語彙 Q1–7 (Finish by 23:00 left / 7m)":i<720?"Target: 文法 Q8–12 (Finish by 18:00 left / 12m)":i<1320?"Target: 読解 Q13–16 (Finish by 08:00 left / 22m)":"Target: 聴解 Q17–20 (Finish by 00:00 / 30m)"}function H(){if(!e.currentExamDay)return;const a=D(e.currentExamDay),i=document.getElementById("live-timer-val"),n=document.getElementById("live-timer-box");i&&(i.textContent=V(a.remainingSeconds)),n&&(e.timerPaused?n.classList.add("paused"):n.classList.remove("paused"));const t=Math.max(0,1800-a.remainingSeconds),l=Math.min(100,t/1800*100),u=de(a.answers),p=document.getElementById("live-time-bar-fill");p&&(p.style.width=`${l.toFixed(1)}%`,l>u+6?p.classList.add("behind"):p.classList.remove("behind"));const s=document.getElementById("live-time-bar-label");s&&(s.textContent=`⏱ ${Math.floor(t/60)}m / 30m`);const r=document.getElementById("live-pace-target-text");r&&(r.textContent=ce(a.remainingSeconds))}function ie(a){J();const i=D(a);i.status!=="completed"&&(i.status==="not_started"&&(i.status="in_progress",N()),e.timerPaused=!ne(),e.timerInterval=setInterval(()=>{if(e.activeTab!=="exam"||!e.currentExamDay)return;if(!ne()){e.timerPaused||(e.timerPaused=!0,N(),H());return}e.timerPaused&&(e.timerPaused=!1,H());const t=D(e.currentExamDay);if(t.status==="completed"){J();return}t.remainingSeconds>0&&(t.remainingSeconds--,H(),t.remainingSeconds%5===0&&N())},1e3))}function J(){e.timerInterval&&(clearInterval(e.timerInterval),e.timerInterval=null),N()}function O(){I&&(I.pause(),I.currentTime=0,I=null),e.playingQuestion=null}document.addEventListener("visibilitychange",()=>{document.hidden?(e.timerPaused=!0,N(),H()):e.activeTab==="exam"&&e.currentExamDay&&(e.timerPaused=!1,H())});window.addEventListener("blur",()=>{e.timerPaused=!0,N(),H()});window.addEventListener("focus",()=>{!document.hidden&&e.activeTab==="exam"&&e.currentExamDay&&(e.timerPaused=!1,H())});window.addEventListener("pagehide",()=>{e.timerPaused=!0,N()});window.addEventListener("beforeunload",()=>{N()});function ve(){return new Promise(a=>{try{const i=window.AudioContext||window.webkitAudioContext;if(!i)return a();const n=new i,t=n.currentTime,l=(u,p,s)=>{const r=n.createOscillator(),d=n.createGain();r.type="sine",r.frequency.setValueAtTime(u,p),d.gain.setValueAtTime(.15,p),d.gain.exponentialRampToValueAtTime(.001,p+s),r.connect(d),d.connect(n.destination),r.start(p),r.stop(p+s)};l(659.25,t,.35),l(523.25,t+.35,.55),setTimeout(()=>{n.close().catch(()=>{}),a()},950)}catch{a()}})}async function be(a){if(e.playingQuestion===a.qNum){O(),b();return}if(O(),e.playingQuestion=a.qNum,b(),await ve(),e.playingQuestion!==a.qNum)return;const i=a.audioFile||`./audio/d${e.currentExamDay}-q${a.qNum}.mp3`,n=new Audio(i);I=n,n.onended=()=>{e.playingQuestion===a.qNum&&(e.playingQuestion=null,I=null,b())},n.onerror=()=>{e.playingQuestion=null,I=null,e.openTranscripts[a.qNum]=!0,b()};try{await n.play()}catch{e.playingQuestion=null,I=null,e.openTranscripts[a.qNum]=!0,b()}}function fe(){const a=B();if(e.loadingExams||!a.length)return`<div class="hero-banner"><b>Loading JLPT ${e.level} Daily Exam Papers...</b></div>`;const i=Z(),n=ge(),t=a.find(v=>v.day===n)||a[0],l=D(t.day),u=Object.keys(l.answers).length;let p=0,s=0,r=0;for(const v of a){const f=D(v.day);f.status==="completed"&&f.score&&(p++,s+=f.score.totalScore,f.score.passed&&r++)}const d=p>0?Math.round(s/p):null;let m="";l.status==="in_progress"?m=`<button class="btn-primary btn-resume" data-action="open-exam" data-day="${t.day}">
+(function(){const i=document.createElement("link").relList;if(i&&i.supports&&i.supports("modulepreload"))return;for(const l of document.querySelectorAll('link[rel="modulepreload"]'))t(l);new MutationObserver(l=>{for(const u of l)if(u.type==="childList")for(const p of u.addedNodes)p.tagName==="LINK"&&p.rel==="modulepreload"&&t(p)}).observe(document,{childList:!0,subtree:!0});function n(l){const u={};return l.integrity&&(u.integrity=l.integrity),l.referrerPolicy&&(u.referrerPolicy=l.referrerPolicy),l.crossOrigin==="use-credentials"?u.credentials="include":l.crossOrigin==="anonymous"?u.credentials="omit":u.credentials="same-origin",u}function t(l){if(l.ep)return;l.ep=!0;const u=n(l);fetch(l.href,u)}})();const X="jlpt_selected_level",W={N3:"jlpt_n3_daily_state_v1",N4:"jlpt_n4_daily_state_v1"};function ue(){try{const i=(new URLSearchParams(window.location.search).get("level")||"").toUpperCase();if(i==="N3"||i==="N4")return localStorage.setItem(X,i),i;const n=(localStorage.getItem(X)||"").toUpperCase();if(n==="N3"||n==="N4")return n}catch{}return"N3"}"serviceWorker"in navigator&&window.addEventListener("load",()=>{navigator.serviceWorker.register("./sw.js").catch(()=>{})});function oe(a){try{const i=localStorage.getItem(W[a]||W.N3);if(i){const n=JSON.parse(i);if(n&&typeof n=="object"&&n.days)return n}}catch(i){console.warn("Failed to parse saved state:",i)}return{days:{}}}const ee=ue(),e={level:ee,examsByLevel:{},decksByLevel:{},loadingExams:!0,loadingDeck:!1,store:oe(ee),activeTab:"daily",currentExamDay:null,timerPaused:!1,timerInterval:null,showJumpDrawer:!1,openTranscripts:{},playingQuestion:null,activeWordPopup:null,showBackupModal:!1,deckFilter:"all",deckHideMastered:!1,deckHideKatakana:!0,deckViewMode:"card",tableMaskReading:!1,tableMaskMeaning:!1,deckQueue:[],deckCursor:0,deckFlipped:!1,deckSessionReviewed:0};function B(){return e.examsByLevel[e.level]||[]}function re(){return e.decksByLevel[e.level]||[]}function Z(){return e.level==="N4"?90:95}async function le(a){if(e.examsByLevel[a]){e.loadingExams=!1;return}e.loadingExams=!0,v();try{const t=await(await fetch(a==="N4"?"./data/exams-n4.json":"./data/exams-n3.json")).json();e.examsByLevel[a]=t}catch(i){console.error("Failed to load exams for",a,i),e.examsByLevel[a]=[]}e.loadingExams=!1,v()}async function te(a){if(e.decksByLevel[a]){e.deckQueue.length||F(!1);return}e.loadingDeck=!0,v();try{const t=await(await fetch(a==="N4"?"./data/deck-n4.json":"./data/deck-n3.json")).json();e.decksByLevel[a]=t}catch(i){console.error("Failed to load deck for",a,i),e.decksByLevel[a]=[]}e.loadingDeck=!1,F(!1),v()}function _(a){var i,n,t;if(e.store.deck||(e.store.deck={}),a&&typeof a=="object"){const l=String(a.w||"").trim();return((i=e.store.deck[l])==null?void 0:i.status)||((n=e.store.deck[a.id])==null?void 0:n.status)||"new"}return((t=e.store.deck[a])==null?void 0:t.status)||"new"}function G(a,i){e.store.deck||(e.store.deck={});const n=a&&typeof a=="object"?String(a.w||"").trim():String(a||"").trim(),t=e.store.deck[n]||{reps:0};e.store.deck[n]={status:i,reps:(t.reps||0)+1},a&&typeof a=="object"&&a.id&&(e.store.deck[a.id]=e.store.deck[n]),D()}function K(a){var u,p;if(!a.day||!a.qNum)return!1;const i=(u=e.store.days)==null?void 0:u[a.day];if(!i||i.status!=="completed")return!1;const t=B().find(s=>s.day===a.day),l=t==null?void 0:t.questions.find(s=>s.qNum===a.qNum);return l?((p=i.answers)==null?void 0:p[a.qNum])!==l.answer:!1}function pe(a){return/[\u30a0-\u30ff]/.test(String(a||""))}function F(a=!1){const i=re();if(!i.length){e.deckQueue=[],e.deckCursor=0,e.deckFlipped=!1;return}const n=new Set;let t=i.filter(l=>{const u=String(l.w||"").replace(/^[〜～\s]+/,"").trim();if(!u||!/[\u4e00-\u9faf]/.test(u)||e.deckHideKatakana&&pe(u)||n.has(u))return!1;n.add(u);const p=_(l);return e.deckHideMastered&&p==="mastered"&&e.deckFilter!=="weak"&&e.deckViewMode!=="table"?!1:e.deckFilter==="weak"?p==="struggling"||K(l):e.deckFilter==="kanji"?l.cat==="kanji":e.deckFilter==="adverb_grammar"?l.cat==="adverb_grammar":!0});if(!a)t=[...t].sort((l,u)=>{const p=String(l.w||"").replace(/^[^\u4e00-\u9faf]+/,""),s=String(u.w||"").replace(/^[^\u4e00-\u9faf]+/,""),r=p.localeCompare(s,"ja");return r!==0?r:String(l.w||"").localeCompare(String(u.w||""),"ja")});else{t=[...t];for(let l=t.length-1;l>0;l--){const u=Math.floor(Math.random()*(l+1));[t[l],t[u]]=[t[u],t[l]]}}e.deckQueue=t,e.deckCursor=0,e.deckFlipped=!1}function D(){try{const a=W[e.level]||W.N3;localStorage.setItem(a,JSON.stringify(e.store))}catch(a){console.warn("Failed to save state:",a)}}function N(a){if(!e.store.days[a])e.store.days[a]={status:"not_started",answers:{},starSlots:{},remainingSeconds:1800,lastQuestion:1,score:null,completedAt:null};else{const i=e.store.days[a];if(i.remainingSeconds>1800&&(i.remainingSeconds=1800),i.lastQuestion>20&&(i.lastQuestion=1),i.answers)for(const n of Object.keys(i.answers))Number(n)>20&&delete i.answers[n]}return e.store.days[a]}function me(a,i){let n=0,t=0,l=0,u=0,p=0,s=0,r=0;for(const h of a.questions){const o=i[h.qNum]===h.answer;if(h.section==="vocab"||h.section==="grammar")t++,o&&n++;else if(h.section==="reading"){p++;const M=h.mondaiId==="r-m4"?12:16;o&&(u++,l+=M)}else h.section==="listening"&&(r++,o&&s++)}const d=Math.round(n/Math.max(1,t)*60),m=Math.min(60,Math.round(l)),$=Math.round(s/Math.max(1,r)*60),b=d+m+$,f=e.level==="N4"?b>=90&&d+m>=38&&$>=19:b>=95&&d>=19&&m>=19&&$>=19;return{langScore:d,readScore:m,listenScore:$,totalScore:b,passed:f,langRaw:n,langTotal:t,readRaw:u,readTotal:p,listenRaw:s,listenTotal:r}}function V(a){const i=Math.max(0,Math.floor(a)),n=Math.floor(i/60),t=i%60;return`${String(n).padStart(2,"0")}:${String(t).padStart(2,"0")}`}function g(a=""){return String(a).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}const ae=typeof Intl<"u"&&Intl.Segmenter?new Intl.Segmenter("ja",{granularity:"word"}):null;function U(a){return`https://jpdb.io/search?q=${encodeURIComponent(a)}&lang=english#a`}function se(a){if(!a)return"";if(!ae)return`<a class="jp-word" href="${U(a)}" target="_blank" rel="noopener noreferrer">${g(a)}</a>`;const i=[...ae.segment(a)];let n="";for(const t of i){const l=t.segment;if(!(t.isWordLike&&/[\u3040-\u30ff\u4e00-\u9faf]/.test(l))){n+=g(l);continue}n+=`<a class="jp-word" href="${U(l)}" target="_blank" rel="noopener noreferrer">${g(l)}</a>`}return n}function L(a){return a?String(a).split(/(<u>[\s\S]*?<\/u>)/g).map(n=>{if(n.startsWith("<u>")&&n.endsWith("</u>")){const t=n.slice(3,-4);return`<u>${se(t)}</u>`}return n.split(`
+`).map(t=>se(t)).join("<br/>")}).join(""):""}function ge(){const a=B();if(!a.length)return 1;for(const i of a)if(N(i.day).status==="in_progress")return i.day;for(const i of a)if(N(i.day).status!=="completed")return i.day;return a.length}let I=null;function ne(){return!document.hidden&&document.hasFocus()}function de(a){let i=0;for(const n of Object.keys(a||{})){const t=Number(n);t>=1&&t<=7?i+=23.3333/7:t>=8&&t<=12?i+=16.6667/5:t>=13&&t<=16?i+=33.3333/4:t>=17&&t<=20&&(i+=26.6667/4)}return Math.min(100,Math.round(i*10)/10)}function ce(a){const i=Math.max(0,1800-a);return i<420?"Target: 語彙 Q1–7 (Finish by 23:00 left / 7m)":i<720?"Target: 文法 Q8–12 (Finish by 18:00 left / 12m)":i<1320?"Target: 読解 Q13–16 (Finish by 08:00 left / 22m)":"Target: 聴解 Q17–20 (Finish by 00:00 / 30m)"}function H(){if(!e.currentExamDay)return;const a=N(e.currentExamDay),i=document.getElementById("live-timer-val"),n=document.getElementById("live-timer-box");i&&(i.textContent=V(a.remainingSeconds)),n&&(e.timerPaused?n.classList.add("paused"):n.classList.remove("paused"));const t=Math.max(0,1800-a.remainingSeconds),l=Math.min(100,t/1800*100),u=de(a.answers),p=document.getElementById("live-time-bar-fill");p&&(p.style.width=`${l.toFixed(1)}%`,l>u+6?p.classList.add("behind"):p.classList.remove("behind"));const s=document.getElementById("live-time-bar-label");s&&(s.textContent=`⏱ ${Math.floor(t/60)}m / 30m`);const r=document.getElementById("live-pace-target-text");r&&(r.textContent=ce(a.remainingSeconds))}function ie(a){J();const i=N(a);i.status!=="completed"&&(i.status==="not_started"&&(i.status="in_progress",D()),e.timerPaused=!ne(),e.timerInterval=setInterval(()=>{if(e.activeTab!=="exam"||!e.currentExamDay)return;if(!ne()){e.timerPaused||(e.timerPaused=!0,D(),H());return}e.timerPaused&&(e.timerPaused=!1,H());const t=N(e.currentExamDay);if(t.status==="completed"){J();return}t.remainingSeconds>0&&(t.remainingSeconds--,H(),t.remainingSeconds%5===0&&D())},1e3))}function J(){e.timerInterval&&(clearInterval(e.timerInterval),e.timerInterval=null),D()}function O(){I&&(I.pause(),I.currentTime=0,I=null),e.playingQuestion=null}document.addEventListener("visibilitychange",()=>{document.hidden?(e.timerPaused=!0,D(),H()):e.activeTab==="exam"&&e.currentExamDay&&(e.timerPaused=!1,H())});window.addEventListener("blur",()=>{e.timerPaused=!0,D(),H()});window.addEventListener("focus",()=>{!document.hidden&&e.activeTab==="exam"&&e.currentExamDay&&(e.timerPaused=!1,H())});window.addEventListener("pagehide",()=>{e.timerPaused=!0,D()});window.addEventListener("beforeunload",()=>{D()});function ve(){return new Promise(a=>{try{const i=window.AudioContext||window.webkitAudioContext;if(!i)return a();const n=new i,t=n.currentTime,l=(u,p,s)=>{const r=n.createOscillator(),d=n.createGain();r.type="sine",r.frequency.setValueAtTime(u,p),d.gain.setValueAtTime(.15,p),d.gain.exponentialRampToValueAtTime(.001,p+s),r.connect(d),d.connect(n.destination),r.start(p),r.stop(p+s)};l(659.25,t,.35),l(523.25,t+.35,.55),setTimeout(()=>{n.close().catch(()=>{}),a()},950)}catch{a()}})}async function be(a){if(e.playingQuestion===a.qNum){O(),v();return}if(O(),e.playingQuestion=a.qNum,v(),await ve(),e.playingQuestion!==a.qNum)return;const i=a.audioFile||`./audio/d${e.currentExamDay}-q${a.qNum}.mp3`,n=new Audio(i);I=n,n.onended=()=>{e.playingQuestion===a.qNum&&(e.playingQuestion=null,I=null,v())},n.onerror=()=>{e.playingQuestion=null,I=null,e.openTranscripts[a.qNum]=!0,v()};try{await n.play()}catch{e.playingQuestion=null,I=null,e.openTranscripts[a.qNum]=!0,v()}}function fe(){const a=B();if(e.loadingExams||!a.length)return`<div class="hero-banner"><b>Loading JLPT ${e.level} Daily Exam Papers...</b></div>`;const i=Z(),n=ge(),t=a.find(b=>b.day===n)||a[0],l=N(t.day),u=Object.keys(l.answers).length;let p=0,s=0,r=0;for(const b of a){const f=N(b.day);f.status==="completed"&&f.score&&(p++,s+=f.score.totalScore,f.score.passed&&r++)}const d=p>0?Math.round(s/p):null;let m="";l.status==="in_progress"?m=`<button class="btn-primary btn-resume" data-action="open-exam" data-day="${t.day}">
       ▶ Resume ${e.level} Day ${t.day} (Q${l.lastQuestion||1} · ${u}/${t.totalQuestions} · ${V(l.remainingSeconds)} left)
     </button>`:m=`<button class="btn-primary" data-action="open-exam" data-day="${t.day}">
       ▶ Start ${e.level} Day ${t.day} Paper (${t.labelEn} · 30 min)
-    </button>`;const y=a.map(v=>{const f=D(v.day),h=Object.keys(f.answers).length,E=Math.round(h/v.totalQuestions*100),o=v.day===n;let L='<span class="badge badge-not-started">Not Started · 30:00</span>',A="<span>20 Questions (Vocab 7 · Grammar 5 · Reading 4 · Listening 4)</span>",M=`<button class="btn-primary" data-action="open-exam" data-day="${v.day}">Start 30m Paper</button>`;if(f.status==="in_progress")L=`<span class="badge badge-progress">In Progress · ${h}/${v.totalQuestions} Answered · ${V(f.remainingSeconds)} left</span>`,A=`<span>Paused at Question ${f.lastQuestion||1} — Ready to resume anytime</span>`,M=`<button class="btn-primary btn-resume" data-action="open-exam" data-day="${v.day}">Resume (Q${f.lastQuestion||1}) →</button>`;else if(f.status==="completed"&&f.score){const C=f.score;L=C.passed?`<span class="badge badge-pass">PASS 合格 · ${C.totalScore} / 180</span>`:`<span class="badge badge-fail">SCORE · ${C.totalScore} / 180 (Need ${i})</span>`,A=`<span>言語知識 <b>${C.langScore}/60</b> · 読解 <b>${C.readScore}/60</b> · 聴解 <b>${C.listenScore}/60</b></span>`,M=`
-          <button class="btn-secondary" data-action="open-exam" data-day="${v.day}">Review Paper</button>
-          <button class="btn-secondary" data-action="reset-day" data-day="${v.day}" title="Reset and retake this day">Retake</button>
+    </button>`;const $=a.map(b=>{const f=N(b.day),h=Object.keys(f.answers).length,E=Math.round(h/b.totalQuestions*100),o=b.day===n;let M='<span class="badge badge-not-started">Not Started · 30:00</span>',A="<span>20 Questions (Vocab 7 · Grammar 5 · Reading 4 · Listening 4)</span>",j=`<button class="btn-primary" data-action="open-exam" data-day="${b.day}">Start 30m Paper</button>`;if(f.status==="in_progress")M=`<span class="badge badge-progress">In Progress · ${h}/${b.totalQuestions} Answered · ${V(f.remainingSeconds)} left</span>`,A=`<span>Paused at Question ${f.lastQuestion||1} — Ready to resume anytime</span>`,j=`<button class="btn-primary btn-resume" data-action="open-exam" data-day="${b.day}">Resume (Q${f.lastQuestion||1}) →</button>`;else if(f.status==="completed"&&f.score){const C=f.score;M=C.passed?`<span class="badge badge-pass">PASS 合格 · ${C.totalScore} / 180</span>`:`<span class="badge badge-fail">SCORE · ${C.totalScore} / 180 (Need ${i})</span>`,A=`<span>言語知識 <b>${C.langScore}/60</b> · 読解 <b>${C.readScore}/60</b> · 聴解 <b>${C.listenScore}/60</b></span>`,j=`
+          <button class="btn-secondary" data-action="open-exam" data-day="${b.day}">Review Paper</button>
+          <button class="btn-secondary" data-action="reset-day" data-day="${b.day}" title="Reset and retake this day">Retake</button>
         `}return`
         <div class="day-card ${o?"is-current":""} ${f.status==="completed"?"is-completed":""}">
           <div class="day-left">
             <div class="day-num-box">
               <span class="d-small">${e.level} D</span>
-              <span class="d-big">${v.day}</span>
+              <span class="d-big">${b.day}</span>
             </div>
             <div class="day-info">
               <div class="day-date-row">
-                <span class="day-date-title">${g(v.labelEn)}</span>
-                <span class="day-date-ja">${g(v.labelJa)}</span>
-                ${L}
+                <span class="day-date-title">${g(b.labelEn)}</span>
+                <span class="day-date-ja">${g(b.labelJa)}</span>
+                ${M}
               </div>
               <div class="day-meta-row">
                 ${A}
@@ -28,7 +28,7 @@
             </div>
           </div>
           <div class="day-actions">
-            ${M}
+            ${j}
           </div>
         </div>
       `}).join("");return`
@@ -69,7 +69,7 @@
     </div>
 
     <div class="days-grid">
-      ${y}
+      ${$}
     </div>
 
     <div class="exam-day-milestone">
@@ -84,38 +84,38 @@
         📈 View ${e.level} Score Trend
       </button>
     </div>
-  `}function ye(){const a=B();if(!a.length)return"";const i=a.find(o=>o.day===e.currentExamDay)||a[0],n=D(i.day),t=n.status==="completed",l=Object.keys(n.answers).length,u=Z();let p=null,s=null;const r={vocab:{title:"第1部：言語知識（文字・語彙）",meta:"目安時間：7分（全7問 · Q1〜Q7）"},grammar:{title:"第2部：言語知識（文法）・読解 【文法】",meta:"目安時間：5分（全5問 · Q8〜Q12）"},reading:{title:"第2部：言語知識（文法）・読解 【読解】",meta:"目安時間：10分（全4問 · Q13〜Q16）"},listening:{title:"第3部：聴解（リスニング）",meta:"目安時間：8分（全4問 · Q17〜Q20）"}};let d="";for(const o of i.questions){if(o.section!==p){p=o.section;const x=r[o.section];d+=`
+  `}function ye(){const a=B();if(!a.length)return"";const i=a.find(o=>o.day===e.currentExamDay)||a[0],n=N(i.day),t=n.status==="completed",l=Object.keys(n.answers).length,u=Z();let p=null,s=null;const r={vocab:{title:"第1部：言語知識（文字・語彙）",meta:"目安時間：7分（全7問 · Q1〜Q7）"},grammar:{title:"第2部：言語知識（文法）・読解 【文法】",meta:"目安時間：5分（全5問 · Q8〜Q12）"},reading:{title:"第2部：言語知識（文法）・読解 【読解】",meta:"目安時間：10分（全4問 · Q13〜Q16）"},listening:{title:"第3部：聴解（リスニング）",meta:"目安時間：8分（全4問 · Q17〜Q20）"}};let d="";for(const o of i.questions){if(o.section!==p){p=o.section;const x=r[o.section];d+=`
         <div class="section-divider-banner" id="sec-${o.section}">
           <span>${g(x.title)}</span>
           <span style="font-size:0.78rem; font-weight:600; color:#d4d4d8;">${g(x.meta)}</span>
         </div>
       `}if(o.mondaiId!==s&&(s=o.mondaiId,d+=`
         <div class="mondai-header">
-          ${j(o.mondaiTitle)}
+          ${L(o.mondaiTitle)}
         </div>
-      `),o.passageText||o.passageTable){const x=o.passageTitle?`<div class="passage-title-bar">${j(o.passageTitle)}</div>`:"",k=o.passageLabel?`<b>${g(o.passageLabel)}</b> `:"",q=(o.passageText||"").split(/\n\n+/).filter(Boolean).map((P,R)=>`<p class="passage-paragraph">${R===0?k:""}${j(P)}</p>`).join("");let T="";if(o.passageTable){const P=o.passageTable.headers.map(c=>`<th>${j(c)}</th>`).join(""),R=o.passageTable.rows.map(c=>`<tr>${c.map($=>`<td>${j($)}</td>`).join("")}</tr>`).join("");T=`
+      `),o.passageText||o.passageTable){const x=o.passageTitle?`<div class="passage-title-bar">${L(o.passageTitle)}</div>`:"",k=o.passageLabel?`<b>${g(o.passageLabel)}</b> `:"",q=(o.passageText||"").split(/\n\n+/).filter(Boolean).map((P,R)=>`<p class="passage-paragraph">${R===0?k:""}${L(P)}</p>`).join("");let T="";if(o.passageTable){const P=o.passageTable.headers.map(c=>`<th>${L(c)}</th>`).join(""),R=o.passageTable.rows.map(c=>`<tr>${c.map(y=>`<td>${L(y)}</td>`).join("")}</tr>`).join("");T=`
           <div class="info-table-wrap">
             <table class="info-table">
               <thead><tr>${P}</tr></thead>
               <tbody>${R}</tbody>
             </table>
           </div>
-        `}const S=o.passageNotes?`<div class="passage-notes">${j(o.passageNotes)}</div>`:"";d+=`
+        `}const S=o.passageNotes?`<div class="passage-notes">${L(o.passageNotes)}</div>`:"";d+=`
         <div class="reading-passage-box style-${o.passageStyle||"essay"}">
           ${x}
           ${q}
           ${T}
           ${S}
         </div>
-      `}let L="";if(o.section==="listening"){const x=e.playingQuestion===o.qNum,k=t||!!e.openTranscripts[o.qNum],q=o.audioFile||`./audio/d${i.day}-q${o.qNum}.mp3`,T=(o.dialogue||[]).map(S=>`
+      `}let M="";if(o.section==="listening"){const x=e.playingQuestion===o.qNum,k=t||!!e.openTranscripts[o.qNum],q=o.audioFile||`./audio/d${i.day}-q${o.qNum}.mp3`,T=(o.dialogue||[]).map(S=>`
           <div class="dialogue-line">
             <span class="speaker-tag">${S.speaker==="M"?"男 (Male)":"女 (Female)"}</span>
-            ${j(S.text)}
+            ${L(S.text)}
           </div>
-        `).join("");L=`
+        `).join("");M=`
         <div class="listening-box">
           <div style="font-size:0.84rem; color:var(--ink-muted); margin-bottom:0.45rem;">
-            🎧 <b>状況：</b>${j(o.listeningIntro)}
+            🎧 <b>状況：</b>${L(o.listeningIntro)}
           </div>
           <div class="listening-controls">
             <button class="btn-audio ${x?"playing":""}" data-action="play-audio" data-qnum="${o.qNum}">
@@ -136,16 +136,16 @@
             ★ Sentence Scramble Helper (Tap fragments below to test order; slot ${o.starPosition} is ★):
           </div>
           <div class="star-slots-row">
-            <span>${j(o.prefix)}</span>
+            <span>${L(o.prefix)}</span>
             ${k}
-            <span>${j(o.suffix)}</span>
+            <span>${L(o.suffix)}</span>
           </div>
           <div style="display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center;">
             ${q}
             <button class="btn-secondary" style="padding:0.22rem 0.5rem; font-size:0.72rem;" data-action="reset-star" data-qnum="${o.qNum}">Clear</button>
           </div>
         </div>
-      `}const M=n.answers[o.qNum],C=o.options.every(x=>x.length<=16)?"compact-grid":"";!t&&o.hideTargetReading&&o.targetWord;const Q=o.options.map((x,k)=>{const q=M===k;let T=q?"selected":"";t&&(k===o.answer?T="graded-correct":q&&k!==o.answer&&(T="graded-wrong"));const S=o.mondaiId==="v-m1"?g(x):j(x,{qNum:o.qNum});return`
+      `}const j=n.answers[o.qNum],C=o.options.every(x=>x.length<=16)?"compact-grid":"";!t&&o.hideTargetReading&&o.targetWord;const Q=o.options.map((x,k)=>{const q=j===k;let T=q?"selected":"";t&&(k===o.answer?T="graded-correct":q&&k!==o.answer&&(T="graded-wrong"));const S=o.mondaiId==="v-m1"?g(x):L(x,{qNum:o.qNum});return`
           <div class="option-row ${T}">
             <button
               type="button"
@@ -164,10 +164,10 @@
                     ${q?"✓ Chosen":"Select"}
                   </button>`}
           </div>
-        `}).join("");let z="";if(t){const x=M===o.answer,k=o.optionReasons||[],q=o.options.map((T,S)=>{const P=S===o.answer,R=M===S&&!P,c=P?"elim-correct":R?"elim-user-wrong":"",$=R?' <span class="badge badge-fail" style="margin-left:0.35rem;">✗ Your Pick</span>':P&&M===S?' <span class="badge badge-pass" style="margin-left:0.35rem;">✓ Your Pick</span>':"",w=k[S]||(P?"✓ Correct choice.":"✗ Distractor.");return`
+        `}).join("");let z="";if(t){const x=j===o.answer,k=o.optionReasons||[],q=o.options.map((T,S)=>{const P=S===o.answer,R=j===S&&!P,c=P?"elim-correct":R?"elim-user-wrong":"",y=R?' <span class="badge badge-fail" style="margin-left:0.35rem;">✗ Your Pick</span>':P&&j===S?' <span class="badge badge-pass" style="margin-left:0.35rem;">✓ Your Pick</span>':"",w=k[S]||(P?"✓ Correct choice.":"✗ Distractor.");return`
             <div class="elimination-item ${c}">
               <div>
-                <b>Choice ${S+1}: 「${g(T.replace(/<\/?u>/g,""))}」</b>${$}
+                <b>Choice ${S+1}: 「${g(T.replace(/<\/?u>/g,""))}」</b>${y}
               </div>
               <div style="margin-top:0.15rem; color:#27272a;">
                 ${g(w)}
@@ -176,7 +176,7 @@
           `}).join("");z=`
         <div class="explanation-box ${x?"is-correct":"is-wrong"}">
           <div style="font-size:0.92rem; margin-bottom:0.35rem;">
-            <b>${x?`✓ Correct (正解：選択肢 ${o.answer+1})`:M!==void 0?`✗ Incorrect (You picked ${M+1} · Correct Answer: Choice ${o.answer+1})`:`✗ Unanswered (Correct Answer: Choice ${o.answer+1})`}</b>
+            <b>${x?`✓ Correct (正解：選択肢 ${o.answer+1})`:j!==void 0?`✗ Incorrect (You picked ${j+1} · Correct Answer: Choice ${o.answer+1})`:`✗ Unanswered (Correct Answer: Choice ${o.answer+1})`}</b>
           </div>
           <div>${g(o.explanation)}</div>
           <div class="elimination-list">
@@ -186,11 +186,11 @@
         </div>
       `}d+=`
       <div class="question-block" id="q-block-${o.qNum}">
-        ${L}
+        ${M}
         <div class="question-prompt-row">
           <span class="q-number-box">${o.qNum}</span>
           <div class="q-prompt-text">
-            ${j(o.prompt)}
+            ${L(o.prompt)}
           </div>
         </div>
         ${A}
@@ -199,8 +199,8 @@
         </div>
         ${z}
       </div>
-    `}let m="";if(e.showJumpDrawer){const o=(L,A,M)=>{let C="";for(let Q=A;Q<=M;Q++){const z=i.questions[Q-1],x=n.answers[Q];let k=x!==void 0?"answered":"";t&&(k=x===z.answer?"correct":"wrong"),C+=`<button class="q-jump-pill ${k}" data-action="jump-to-q" data-qnum="${Q}">${Q}</button>`}return`
-        <div class="q-jump-section-label">${g(L)}</div>
+    `}let m="";if(e.showJumpDrawer){const o=(M,A,j)=>{let C="";for(let Q=A;Q<=j;Q++){const z=i.questions[Q-1],x=n.answers[Q];let k=x!==void 0?"answered":"";t&&(k=x===z.answer?"correct":"wrong"),C+=`<button class="q-jump-pill ${k}" data-action="jump-to-q" data-qnum="${Q}">${Q}</button>`}return`
+        <div class="q-jump-section-label">${g(M)}</div>
         <div class="q-jump-grid">${C}</div>
       `};m=`
       <div class="q-jump-drawer">
@@ -213,7 +213,7 @@
         ${o("第2部：読解 (Reading · Q13–Q16 · ~10m)",13,16)}
         ${o("第3部：聴解 (Listening · Q17–Q20 · ~8m)",17,20)}
       </div>
-    `}let y="";if(t&&n.score){const o=n.score;y=`
+    `}let $="";if(t&&n.score){const o=n.score;$=`
       <div class="score-report-card">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem;">
           <div>
@@ -253,7 +253,7 @@
           </div>
         </div>
       </div>
-    `}const v=de(n.answers),f=Math.max(0,1800-n.remainingSeconds),h=Math.min(100,f/1800*100),E=h>v+6;return`
+    `}const b=de(n.answers),f=Math.max(0,1800-n.remainingSeconds),h=Math.min(100,f/1800*100),E=h>b+6;return`
     <div class="exam-sticky-bar">
       <div class="exam-sticky-top-row">
         <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
@@ -288,7 +288,7 @@
               <div class="pacing-tick" style="left:23.33%;"></div>
               <div class="pacing-tick" style="left:40.00%;"></div>
               <div class="pacing-tick" style="left:73.33%;"></div>
-              <div class="pacing-fill-questions" style="width:${v}%;"></div>
+              <div class="pacing-fill-questions" style="width:${b}%;"></div>
             </div>
           </div>
 
@@ -313,7 +313,7 @@
     </div>
 
     ${m}
-    ${y}
+    ${$}
 
     <div class="exam-booklet">
       <div class="booklet-cover-banner">
@@ -341,29 +341,29 @@
         </div>
       `}
     </div>
-  `}function $e(){const a=B();if(e.loadingExams||!a.length)return`<div class="hero-banner"><b>Loading ${e.level} Score Progress...</b></div>`;const i=Z(),n=a.map(c=>({exam:c,state:D(c.day)})).filter(c=>c.state.status==="completed"&&c.state.score),t=n.length,l=t>0?n[t-1].state.score.totalScore:null,u=t>0?Math.max(...n.map(c=>c.state.score.totalScore)):null,p=t>0?Math.round(n.reduce((c,$)=>c+$.state.score.totalScore,0)/t):null,s=760,r=260,d=44,m=24,y=22,v=38,f=s-d-m,h=r-y-v,E=c=>d+(c-1)/33*f,o=(c,$=180)=>y+h-c/$*h,A=[0,60,i,120,180].map(c=>{const $=o(c,180),w=c===i;return`
-        <line x1="${d}" y1="${$}" x2="${s-m}" y2="${$}"
+  `}function $e(){const a=B();if(e.loadingExams||!a.length)return`<div class="hero-banner"><b>Loading ${e.level} Score Progress...</b></div>`;const i=Z(),n=a.map(c=>({exam:c,state:N(c.day)})).filter(c=>c.state.status==="completed"&&c.state.score),t=n.length,l=t>0?n[t-1].state.score.totalScore:null,u=t>0?Math.max(...n.map(c=>c.state.score.totalScore)):null,p=t>0?Math.round(n.reduce((c,y)=>c+y.state.score.totalScore,0)/t):null,s=760,r=260,d=44,m=24,$=22,b=38,f=s-d-m,h=r-$-b,E=c=>d+(c-1)/33*f,o=(c,y=180)=>$+h-c/y*h,A=[0,60,i,120,180].map(c=>{const y=o(c,180),w=c===i;return`
+        <line x1="${d}" y1="${y}" x2="${s-m}" y2="${y}"
           stroke="${w?"#15803d":"#d6d3c9"}"
           stroke-width="${w?"2":"1"}"
           stroke-dasharray="${w?"6,4":"none"}" />
-        <text x="${d-8}" y="${$+4}" text-anchor="end" font-size="11" font-weight="${w?"800":"600"}" fill="${w?"#15803d":"#52525b"}">${c}</text>
-      `}).join(""),C=[1,5,10,15,20,25,30,34].map(c=>{const $=E(c),w=a[c-1];return`
-        <line x1="${$}" y1="${y}" x2="${$}" y2="${y+h}" stroke="#ece9df" stroke-width="1" />
-        <text x="${$}" y="${r-12}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#52525b">D${c} (${w.labelJa.replace(/（.*）/,"")})</text>
-      `}).join(""),Q=n.map(c=>`${E(c.exam.day)},${o(c.state.score.totalScore,180)}`).join(" "),z=n.map(c=>{const $=E(c.exam.day),w=o(c.state.score.totalScore,180),Y=c.state.score.passed;return`
-        <circle cx="${$}" cy="${w}" r="5.5" fill="${Y?"#15803d":"#b45309"}" stroke="#ffffff" stroke-width="2" />
-        <text x="${$}" y="${w-9}" text-anchor="middle" font-size="10.5" font-weight="800" fill="#18181b">${c.state.score.totalScore}</text>
-      `}).join(""),k=[0,19,30,45,60].map(c=>{const $=o(c,60),w=c===19;return`
-        <line x1="${d}" y1="${$}" x2="${s-m}" y2="${$}"
+        <text x="${d-8}" y="${y+4}" text-anchor="end" font-size="11" font-weight="${w?"800":"600"}" fill="${w?"#15803d":"#52525b"}">${c}</text>
+      `}).join(""),C=[1,5,10,15,20,25,30,34].map(c=>{const y=E(c),w=a[c-1];return`
+        <line x1="${y}" y1="${$}" x2="${y}" y2="${$+h}" stroke="#ece9df" stroke-width="1" />
+        <text x="${y}" y="${r-12}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#52525b">D${c} (${w.labelJa.replace(/（.*）/,"")})</text>
+      `}).join(""),Q=n.map(c=>`${E(c.exam.day)},${o(c.state.score.totalScore,180)}`).join(" "),z=n.map(c=>{const y=E(c.exam.day),w=o(c.state.score.totalScore,180),Y=c.state.score.passed;return`
+        <circle cx="${y}" cy="${w}" r="5.5" fill="${Y?"#15803d":"#b45309"}" stroke="#ffffff" stroke-width="2" />
+        <text x="${y}" y="${w-9}" text-anchor="middle" font-size="10.5" font-weight="800" fill="#18181b">${c.state.score.totalScore}</text>
+      `}).join(""),k=[0,19,30,45,60].map(c=>{const y=o(c,60),w=c===19;return`
+        <line x1="${d}" y1="${y}" x2="${s-m}" y2="${y}"
           stroke="${w?"#b91c1c":"#d6d3c9"}"
           stroke-width="${w?"1.8":"1"}"
           stroke-dasharray="${w?"5,4":"none"}" />
-        <text x="${d-8}" y="${$+4}" text-anchor="end" font-size="11" font-weight="${w?"800":"600"}" fill="${w?"#b91c1c":"#52525b"}">${c}</text>
-      `}).join(""),q=n.map(c=>`${E(c.exam.day)},${o(c.state.score.langScore,60)}`).join(" "),T=n.map(c=>`${E(c.exam.day)},${o(c.state.score.readScore,60)}`).join(" "),S=n.map(c=>`${E(c.exam.day)},${o(c.state.score.listenScore,60)}`).join(" "),P=n.map(c=>{const $=E(c.exam.day);return`
-        <circle cx="${$}" cy="${o(c.state.score.langScore,60)}" r="4" fill="#1d4ed8" />
-        <circle cx="${$}" cy="${o(c.state.score.readScore,60)}" r="4" fill="#b45309" />
-        <circle cx="${$}" cy="${o(c.state.score.listenScore,60)}" r="4" fill="#15803d" />
-      `}).join(""),R=n.length===0?`<tr><td colspan="7" style="text-align:center; padding:1.25rem; color:var(--ink-muted);">No completed ${e.level} daily exams yet. Complete Day 1 to see your score plotted here!</td></tr>`:n.slice().reverse().map(({exam:c,state:$})=>{const w=$.score,Y=V(1800-Math.min(1800,$.remainingSeconds||0));return`
+        <text x="${d-8}" y="${y+4}" text-anchor="end" font-size="11" font-weight="${w?"800":"600"}" fill="${w?"#b91c1c":"#52525b"}">${c}</text>
+      `}).join(""),q=n.map(c=>`${E(c.exam.day)},${o(c.state.score.langScore,60)}`).join(" "),T=n.map(c=>`${E(c.exam.day)},${o(c.state.score.readScore,60)}`).join(" "),S=n.map(c=>`${E(c.exam.day)},${o(c.state.score.listenScore,60)}`).join(" "),P=n.map(c=>{const y=E(c.exam.day);return`
+        <circle cx="${y}" cy="${o(c.state.score.langScore,60)}" r="4" fill="#1d4ed8" />
+        <circle cx="${y}" cy="${o(c.state.score.readScore,60)}" r="4" fill="#b45309" />
+        <circle cx="${y}" cy="${o(c.state.score.listenScore,60)}" r="4" fill="#15803d" />
+      `}).join(""),R=n.length===0?`<tr><td colspan="7" style="text-align:center; padding:1.25rem; color:var(--ink-muted);">No completed ${e.level} daily exams yet. Complete Day 1 to see your score plotted here!</td></tr>`:n.slice().reverse().map(({exam:c,state:y})=>{const w=y.score,Y=V(1800-Math.min(1800,y.remainingSeconds||0));return`
               <tr>
                 <td><b>${e.level} Day ${c.day}</b> (${g(c.labelJa)})</td>
                 <td><b>${w.totalScore} / 180</b></td>
@@ -466,7 +466,7 @@
         </table>
       </div>
     </div>
-  `}function we(){const a=re();if(e.loadingDeck||!a.length)return`<div class="hero-banner"><b>Loading JLPT ${e.level} Unlimited Exam Word Deck...</b></div>`;let i=0,n=0;for(const p of a){const s=_(p);s==="mastered"?i++:(s==="struggling"||W(p))&&n++}const t=e.deckQueue,l=t.length>0?t[e.deckCursor%t.length]:null;let u="";if(!l)u=`
+  `}function we(){const a=re();if(e.loadingDeck||!a.length)return`<div class="hero-banner"><b>Loading JLPT ${e.level} Unlimited Exam Word Deck...</b></div>`;let i=0,n=0;for(const p of a){const s=_(p);s==="mastered"?i++:(s==="struggling"||K(p))&&n++}const t=e.deckQueue,l=t.length>0?t[e.deckCursor%t.length]:null;let u="";if(!l)u=`
       <div class="hero-banner" style="text-align:center; padding:1.5rem 1rem;">
         <h2 style="margin:0 0 0.5rem;">🎉 No cards match this filter right now!</h2>
         <p style="color:var(--ink-muted); font-size:0.86rem; margin:0 0 1rem;">
@@ -477,37 +477,35 @@
           <button class="btn-secondary" data-action="toggle-hide-mastered">Toggle Hide Mastered</button>
         </div>
       </div>
-    `;else if(e.deckViewMode==="table"){const p=t.map(s=>{const r=_(s),d=r==="struggling"||W(s),m=r==="mastered"?"row-mastered":d?"row-struggling":r==="reviewing"?"row-reviewing":"",y=e.tableMaskReading?`<span class="masked-cell" data-action="reveal-masked-cell">${g(s.r)}</span>`:g(s.r),v=e.tableMaskMeaning?`<span class="masked-cell" data-action="reveal-masked-cell">${g(s.m)}</span>`:g(s.m);return`
-          <tr class="${m}" id="tbl-row-${s.id}">
-            <td>
+    `;else if(e.deckViewMode==="table"){const p=t.map(s=>{const r=_(s),d=r==="struggling"||K(s);return`
+          <tr class="${r==="mastered"?"row-mastered":d?"row-struggling":r==="reviewing"?"row-reviewing":""}" id="tbl-row-${s.id}">
+            <td class="cell-word">
               <div class="td-word-stack">
                 <span class="td-word-kanji">
                   <a class="jp-word" href="${U(s.w)}" target="_blank" rel="noopener noreferrer">${g(s.w)}</a>
                 </span>
-                <span class="td-word-reading">${y}</span>
+                <span class="td-word-faint-hira" data-action="reveal-masked-cell" title="Tap to darken reading">${g(s.r)}</span>
               </div>
             </td>
-            <td class="td-meaning-cell">${v}</td>
-            <td style="text-align:right;">
+            <td class="cell-rate">
               <div class="mini-rate-group">
                 <button type="button" class="mini-rate-btn ${d?"active":""}" data-action="rate-table-row" data-cid="${s.id}" data-word="${g(s.w)}" data-status="struggling" title="Red · Weak">🔴</button>
                 <button type="button" class="mini-rate-btn ${r==="reviewing"?"active":""}" data-action="rate-table-row" data-cid="${s.id}" data-word="${g(s.w)}" data-status="reviewing" title="Amber · Good">🟡</button>
                 <button type="button" class="mini-rate-btn ${r==="mastered"?"active":""}" data-action="rate-table-row" data-cid="${s.id}" data-word="${g(s.w)}" data-status="mastered" title="Green · Mastered">🟢</button>
               </div>
             </td>
+            <td class="cell-kparts td-kparts-cell">${g(s.km||"—")}</td>
+            <td class="cell-meaning td-meaning-cell">${g(s.m)}</td>
           </tr>
         `}).join("");u=`
       <div class="deck-table-container">
         <table class="deck-compact-table">
           <thead>
             <tr>
-              <th class="col-word" style="cursor:pointer;" data-action="toggle-mask-reading" title="Tap to hide/show readings">
-                漢字 / 読み ${e.tableMaskReading?"🙈":"👁"}
-              </th>
-              <th class="col-meaning" style="cursor:pointer;" data-action="toggle-mask-meaning" title="Tap to hide/show meanings">
-                意味 (${t.length}) ${e.tableMaskMeaning?"🙈":"👁"}
-              </th>
+              <th class="col-word">漢字 (${t.length}) · <span style="opacity:0.65; font-weight:600;">Swipe ➔ for Meaning</span></th>
               <th class="col-rate">🔴 🟡 🟢</th>
+              <th class="col-kparts">漢字のパーツ (Kanji Parts)</th>
+              <th class="col-meaning">英語の意味 (Definition)</th>
             </tr>
           </thead>
           <tbody>
@@ -515,7 +513,7 @@
           </tbody>
         </table>
       </div>
-    `}else{const p=_(l),s=W(l),r=l.day?`${e.level} · Day ${l.day} Paper (Q${l.qNum})`:`JLPT ${e.level} Core Exam Bank`;let d='<span class="badge badge-not-started">New Card</span>';p==="mastered"?d='<span class="badge badge-pass">🟢 Mastered</span>':p==="struggling"||s?d=`<span class="badge badge-fail">🔴 ${s?"Missed in Paper":"Struggling / Again"}</span>`:p==="reviewing"&&(d='<span class="badge badge-progress">🟡 Reviewing</span>');const m=U(l.w);u=`
+    `}else{const p=_(l),s=K(l),r=l.day?`${e.level} · Day ${l.day} Paper (Q${l.qNum})`:`JLPT ${e.level} Core Exam Bank`;let d='<span class="badge badge-not-started">New Card</span>';p==="mastered"?d='<span class="badge badge-pass">🟢 Mastered</span>':p==="struggling"||s?d=`<span class="badge badge-fail">🔴 ${s?"Missed in Paper":"Struggling / Again"}</span>`:p==="reviewing"&&(d='<span class="badge badge-progress">🟡 Reviewing</span>');const m=U(l.w);u=`
       <div class="anki-card" data-action="flip-anki-card" title="Tap anywhere on card to flip">
         <div>
           <div class="anki-card-top">
@@ -530,7 +528,7 @@
           <div class="anki-word-front">${g(l.w)}</div>
 
           ${l.ja?`<div class="anki-sentence-front">
-                  ${j(l.ja)}
+                  ${L(l.ja)}
                 </div>`:""}
         </div>
 
@@ -629,7 +627,7 @@
         </div>
       </div>
     </div>
-  `}function b(){const a=document.getElementById("app");if(!a)return;let i="";e.activeTab==="exam"&&e.currentExamDay?i=ye():e.activeTab==="deck"?i=we():e.activeTab==="progress"?i=$e():i=fe(),a.innerHTML=`
+  `}function v(){const a=document.getElementById("app");if(!a)return;let i="";e.activeTab==="exam"&&e.currentExamDay?i=ye():e.activeTab==="deck"?i=we():e.activeTab==="progress"?i=$e():i=fe(),a.innerHTML=`
     <header class="app-header">
       <div class="header-inner">
         <div class="brand-group">
@@ -664,8 +662,8 @@
   `}document.addEventListener("click",a=>{var l,u,p;if(a.target.closest(".jp-word")){a.stopPropagation();return}const n=a.target.closest("[data-action]");if(!n)return;const t=n.getAttribute("data-action");if(t==="switch-level"){const s=(n.getAttribute("data-level")||"N3").toUpperCase();if(s===e.level)return;J(),O(),e.level=s;try{localStorage.setItem(X,s);const r=new URL(window.location.href);r.searchParams.set("level",s.toLowerCase()),window.history.replaceState({},"",r.toString())}catch{}e.store=oe(s),e.currentExamDay=null,e.deckQueue=[],e.activeTab==="exam"&&(e.activeTab="daily"),le(s),e.activeTab==="deck"&&te(s);return}if(t==="share-level-link"){const s=e.level==="N3"?"n4":"n3",r=`${window.location.origin}${window.location.pathname}?level=${s}`;(l=navigator.clipboard)==null||l.writeText(r),alert(`Copied direct ${s.toUpperCase()} link to clipboard:
 ${r}
 
-Send this to your friend—it will open directly on the ${s.toUpperCase()} exam papers with his own independent progress!`);return}if(t==="switch-tab"){const s=n.getAttribute("data-tab");J(),O(),e.activeWordPopup=null,e.activeTab=s,s==="deck"&&te(e.level),window.scrollTo({top:0,behavior:"smooth"}),b();return}if(t==="toggle-deck-view-mode"){const s=(u=e.deckQueue[e.deckCursor%Math.max(1,e.deckQueue.length)])==null?void 0:u.w;if(e.deckViewMode=e.deckViewMode==="card"?"table":"card",F(!1),s&&e.deckQueue.length){const r=e.deckQueue.findIndex(d=>d.w===s);r!==-1&&(e.deckCursor=r)}b();return}if(t==="toggle-hide-katakana"){e.deckHideKatakana=!e.deckHideKatakana,F(!1),b();return}if(t==="toggle-mask-reading"){e.tableMaskReading=!e.tableMaskReading,b();return}if(t==="toggle-mask-meaning"){e.tableMaskMeaning=!e.tableMaskMeaning,b();return}if(t==="reveal-masked-cell"){n.classList.toggle("revealed");return}if(t==="rate-table-row"){const s=n.getAttribute("data-cid"),r=n.getAttribute("data-word"),d=n.getAttribute("data-status");if(s&&d){const m={id:s,w:r||s},v=_(m)===d?"new":d;G(m,v);const f=document.getElementById(`tbl-row-${s}`);f&&(f.classList.remove("row-struggling","row-reviewing","row-mastered"),v==="struggling"?f.classList.add("row-struggling"):v==="reviewing"?f.classList.add("row-reviewing"):v==="mastered"&&f.classList.add("row-mastered"),f.querySelectorAll(".mini-rate-btn").forEach(h=>{h.classList.toggle("active",h.getAttribute("data-status")===v)}))}return}if(t==="flip-anki-card"){e.deckFlipped=!e.deckFlipped,b();return}if(t==="rate-anki-card"){const s=n.getAttribute("data-rating"),r=e.deckQueue;if(!r.length)return;const d=e.deckCursor%r.length,m=r[d];if(e.deckSessionReviewed++,s==="again"){G(m,"struggling"),r.splice(d,1);const y=Math.min(r.length,d+5);r.splice(y,0,m),r.length>0&&(e.deckCursor=d%r.length)}else s==="good"?(G(m,"reviewing"),e.deckCursor=(d+1)%r.length):s==="easy"&&(G(m,"mastered"),e.deckHideMastered&&e.deckFilter!=="weak"?(r.splice(d,1),r.length>0&&(e.deckCursor=d%r.length)):e.deckCursor=(d+1)%r.length);e.deckFlipped=!1,b();return}if(t==="set-deck-filter"){e.deckFilter=n.getAttribute("data-filter")||"all",F(!1),b();return}if(t==="toggle-hide-mastered"){e.deckHideMastered=!e.deckHideMastered,F(!1),b();return}if(t==="shuffle-deck"){F(!0),b();return}if(t==="prev-anki-card"){const s=e.deckQueue;if(!s.length)return;e.deckCursor=(e.deckCursor-1+s.length)%s.length,e.deckFlipped=!1,b();return}if(t==="next-anki-card"){const s=e.deckQueue;if(!s.length)return;e.deckCursor=(e.deckCursor+1)%s.length,e.deckFlipped=!1,b();return}if(t==="open-exam"){const s=Number(n.getAttribute("data-day"));e.currentExamDay=s,e.activeTab="exam",e.showJumpDrawer=!1,e.activeWordPopup=null;const r=D(s);ie(s),b(),r.status==="in_progress"&&r.lastQuestion>1?setTimeout(()=>{const d=document.getElementById(`q-block-${r.lastQuestion}`);d&&d.scrollIntoView({behavior:"smooth",block:"center"})},60):window.scrollTo({top:0,behavior:"smooth"});return}if(t==="pause-and-exit"){J(),O(),e.activeWordPopup=null,e.activeTab="daily",window.scrollTo({top:0,behavior:"smooth"}),b();return}if(t==="toggle-jump-drawer"){e.showJumpDrawer=!e.showJumpDrawer,b();return}if(t==="jump-to-q"){const s=Number(n.getAttribute("data-qnum"));e.showJumpDrawer=!1,b();const r=document.getElementById(`q-block-${s}`);r&&r.scrollIntoView({behavior:"smooth",block:"center"});return}if(t==="select-option"){const s=Number(n.getAttribute("data-qnum")),r=Number(n.getAttribute("data-optidx"));if(!e.currentExamDay)return;const d=D(e.currentExamDay);if(d.status==="completed")return;d.answers[s]===r?delete d.answers[s]:d.answers[s]=r,d.lastQuestion=s,d.status="in_progress",e.activeWordPopup=null,N(),b();return}if(t==="add-star-frag"){const s=Number(n.getAttribute("data-qnum")),r=Number(n.getAttribute("data-optidx")),d=D(e.currentExamDay);if(d.status==="completed")return;const m=d.starSlots[s]?[...d.starSlots[s]]:[null,null,null,null],y=m.findIndex(v=>v==null);if(y!==-1&&!m.includes(r)){m[y]=r,d.starSlots[s]=m;const f=B().find(E=>E.day===e.currentExamDay),h=f==null?void 0:f.questions.find(E=>E.qNum===s);h&&m[h.starPosition-1]!==null&&(d.answers[s]=m[h.starPosition-1]),d.lastQuestion=s,N(),b()}return}if(t==="clear-star-slot"){const s=Number(n.getAttribute("data-qnum")),r=Number(n.getAttribute("data-slot")),d=D(e.currentExamDay);if(d.status==="completed"||!d.starSlots[s])return;d.starSlots[s][r]=null,N(),b();return}if(t==="reset-star"){const s=Number(n.getAttribute("data-qnum")),r=D(e.currentExamDay);if(r.status==="completed")return;delete r.starSlots[s],N(),b();return}if(t==="play-audio"){const s=Number(n.getAttribute("data-qnum")),d=B().find(y=>y.day===e.currentExamDay),m=d==null?void 0:d.questions.find(y=>y.qNum===s);m&&be(m);return}if(t==="toggle-script"){const s=Number(n.getAttribute("data-qnum"));e.openTranscripts[s]=!e.openTranscripts[s],b();return}if(t==="grade-exam"){if(!e.currentExamDay)return;const r=B().find(y=>y.day===e.currentExamDay),d=D(r.day),m=Object.keys(d.answers).length;if(m<r.totalQuestions&&!window.confirm(`You have answered ${m} of ${r.totalQuestions} questions.
+Send this to your friend—it will open directly on the ${s.toUpperCase()} exam papers with his own independent progress!`);return}if(t==="switch-tab"){const s=n.getAttribute("data-tab");J(),O(),e.activeWordPopup=null,e.activeTab=s,s==="deck"&&te(e.level),window.scrollTo({top:0,behavior:"smooth"}),v();return}if(t==="toggle-deck-view-mode"){const s=(u=e.deckQueue[e.deckCursor%Math.max(1,e.deckQueue.length)])==null?void 0:u.w;if(e.deckViewMode=e.deckViewMode==="card"?"table":"card",F(!1),s&&e.deckQueue.length){const r=e.deckQueue.findIndex(d=>d.w===s);r!==-1&&(e.deckCursor=r)}v();return}if(t==="toggle-hide-katakana"){e.deckHideKatakana=!e.deckHideKatakana,F(!1),v();return}if(t==="toggle-mask-reading"){e.tableMaskReading=!e.tableMaskReading,v();return}if(t==="toggle-mask-meaning"){e.tableMaskMeaning=!e.tableMaskMeaning,v();return}if(t==="reveal-masked-cell"){n.classList.toggle("revealed");return}if(t==="rate-table-row"){const s=n.getAttribute("data-cid"),r=n.getAttribute("data-word"),d=n.getAttribute("data-status");if(s&&d){const m={id:s,w:r||s},b=_(m)===d?"new":d;G(m,b);const f=document.getElementById(`tbl-row-${s}`);f&&(f.classList.remove("row-struggling","row-reviewing","row-mastered"),b==="struggling"?f.classList.add("row-struggling"):b==="reviewing"?f.classList.add("row-reviewing"):b==="mastered"&&f.classList.add("row-mastered"),f.querySelectorAll(".mini-rate-btn").forEach(h=>{h.classList.toggle("active",h.getAttribute("data-status")===b)}))}return}if(t==="flip-anki-card"){e.deckFlipped=!e.deckFlipped,v();return}if(t==="rate-anki-card"){const s=n.getAttribute("data-rating"),r=e.deckQueue;if(!r.length)return;const d=e.deckCursor%r.length,m=r[d];if(e.deckSessionReviewed++,s==="again"){G(m,"struggling"),r.splice(d,1);const $=Math.min(r.length,d+5);r.splice($,0,m),r.length>0&&(e.deckCursor=d%r.length)}else s==="good"?(G(m,"reviewing"),e.deckCursor=(d+1)%r.length):s==="easy"&&(G(m,"mastered"),e.deckHideMastered&&e.deckFilter!=="weak"?(r.splice(d,1),r.length>0&&(e.deckCursor=d%r.length)):e.deckCursor=(d+1)%r.length);e.deckFlipped=!1,v();return}if(t==="set-deck-filter"){e.deckFilter=n.getAttribute("data-filter")||"all",F(!1),v();return}if(t==="toggle-hide-mastered"){e.deckHideMastered=!e.deckHideMastered,F(!1),v();return}if(t==="shuffle-deck"){F(!0),v();return}if(t==="prev-anki-card"){const s=e.deckQueue;if(!s.length)return;e.deckCursor=(e.deckCursor-1+s.length)%s.length,e.deckFlipped=!1,v();return}if(t==="next-anki-card"){const s=e.deckQueue;if(!s.length)return;e.deckCursor=(e.deckCursor+1)%s.length,e.deckFlipped=!1,v();return}if(t==="open-exam"){const s=Number(n.getAttribute("data-day"));e.currentExamDay=s,e.activeTab="exam",e.showJumpDrawer=!1,e.activeWordPopup=null;const r=N(s);ie(s),v(),r.status==="in_progress"&&r.lastQuestion>1?setTimeout(()=>{const d=document.getElementById(`q-block-${r.lastQuestion}`);d&&d.scrollIntoView({behavior:"smooth",block:"center"})},60):window.scrollTo({top:0,behavior:"smooth"});return}if(t==="pause-and-exit"){J(),O(),e.activeWordPopup=null,e.activeTab="daily",window.scrollTo({top:0,behavior:"smooth"}),v();return}if(t==="toggle-jump-drawer"){e.showJumpDrawer=!e.showJumpDrawer,v();return}if(t==="jump-to-q"){const s=Number(n.getAttribute("data-qnum"));e.showJumpDrawer=!1,v();const r=document.getElementById(`q-block-${s}`);r&&r.scrollIntoView({behavior:"smooth",block:"center"});return}if(t==="select-option"){const s=Number(n.getAttribute("data-qnum")),r=Number(n.getAttribute("data-optidx"));if(!e.currentExamDay)return;const d=N(e.currentExamDay);if(d.status==="completed")return;d.answers[s]===r?delete d.answers[s]:d.answers[s]=r,d.lastQuestion=s,d.status="in_progress",e.activeWordPopup=null,D(),v();return}if(t==="add-star-frag"){const s=Number(n.getAttribute("data-qnum")),r=Number(n.getAttribute("data-optidx")),d=N(e.currentExamDay);if(d.status==="completed")return;const m=d.starSlots[s]?[...d.starSlots[s]]:[null,null,null,null],$=m.findIndex(b=>b==null);if($!==-1&&!m.includes(r)){m[$]=r,d.starSlots[s]=m;const f=B().find(E=>E.day===e.currentExamDay),h=f==null?void 0:f.questions.find(E=>E.qNum===s);h&&m[h.starPosition-1]!==null&&(d.answers[s]=m[h.starPosition-1]),d.lastQuestion=s,D(),v()}return}if(t==="clear-star-slot"){const s=Number(n.getAttribute("data-qnum")),r=Number(n.getAttribute("data-slot")),d=N(e.currentExamDay);if(d.status==="completed"||!d.starSlots[s])return;d.starSlots[s][r]=null,D(),v();return}if(t==="reset-star"){const s=Number(n.getAttribute("data-qnum")),r=N(e.currentExamDay);if(r.status==="completed")return;delete r.starSlots[s],D(),v();return}if(t==="play-audio"){const s=Number(n.getAttribute("data-qnum")),d=B().find($=>$.day===e.currentExamDay),m=d==null?void 0:d.questions.find($=>$.qNum===s);m&&be(m);return}if(t==="toggle-script"){const s=Number(n.getAttribute("data-qnum"));e.openTranscripts[s]=!e.openTranscripts[s],v();return}if(t==="grade-exam"){if(!e.currentExamDay)return;const r=B().find($=>$.day===e.currentExamDay),d=N(r.day),m=Object.keys(d.answers).length;if(m<r.totalQuestions&&!window.confirm(`You have answered ${m} of ${r.totalQuestions} questions.
 
 If you just want to take a break and continue later today, tap Cancel and use "Save & Exit".
 
-Grade ${e.level} Day ${r.day} paper now?`))return;J(),O(),d.status="completed",d.score=me(r,d.answers),d.completedAt=new Date().toISOString(),N(),window.scrollTo({top:0,behavior:"smooth"}),b();return}if(t==="reset-day"){const s=Number(n.getAttribute("data-day"));if(!window.confirm(`Reset all answers and timer for ${e.level} Day ${s}?`))return;delete e.store.days[s],N(),e.activeTab==="exam"&&e.currentExamDay===s&&ie(s),b();return}if(t==="toggle-backup-modal"){e.showBackupModal=!e.showBackupModal,b();return}if(t==="copy-backup"){const s=document.getElementById("backup-code-box");s&&(s.select(),(p=navigator.clipboard)==null||p.writeText(s.value),alert("Backup code copied to clipboard!"));return}if(t==="restore-backup"){const s=document.getElementById("backup-code-box");if(!s||!s.value.trim())return;try{const r=JSON.parse(decodeURIComponent(escape(atob(s.value.trim()))));r&&r.days&&(e.store=r,N(),e.showBackupModal=!1,b(),alert("Progress restored successfully!"))}catch{alert("Invalid backup code.")}}});document.addEventListener("keydown",a=>{var i,n,t,l,u;e.activeTab!=="deck"||e.showBackupModal||a.target&&(a.target.tagName==="INPUT"||a.target.tagName==="TEXTAREA")||(a.code==="Space"?(a.preventDefault(),e.deckFlipped=!e.deckFlipped,b()):a.key==="1"?(i=document.querySelector('[data-rating="again"]'))==null||i.click():a.key==="2"?(n=document.querySelector('[data-rating="good"]'))==null||n.click():a.key==="3"?(t=document.querySelector('[data-rating="easy"]'))==null||t.click():a.key==="ArrowRight"?(l=document.querySelector('[data-action="next-anki-card"]'))==null||l.click():a.key==="ArrowLeft"&&((u=document.querySelector('[data-action="prev-anki-card"]'))==null||u.click()))});le(e.level);
+Grade ${e.level} Day ${r.day} paper now?`))return;J(),O(),d.status="completed",d.score=me(r,d.answers),d.completedAt=new Date().toISOString(),D(),window.scrollTo({top:0,behavior:"smooth"}),v();return}if(t==="reset-day"){const s=Number(n.getAttribute("data-day"));if(!window.confirm(`Reset all answers and timer for ${e.level} Day ${s}?`))return;delete e.store.days[s],D(),e.activeTab==="exam"&&e.currentExamDay===s&&ie(s),v();return}if(t==="toggle-backup-modal"){e.showBackupModal=!e.showBackupModal,v();return}if(t==="copy-backup"){const s=document.getElementById("backup-code-box");s&&(s.select(),(p=navigator.clipboard)==null||p.writeText(s.value),alert("Backup code copied to clipboard!"));return}if(t==="restore-backup"){const s=document.getElementById("backup-code-box");if(!s||!s.value.trim())return;try{const r=JSON.parse(decodeURIComponent(escape(atob(s.value.trim()))));r&&r.days&&(e.store=r,D(),e.showBackupModal=!1,v(),alert("Progress restored successfully!"))}catch{alert("Invalid backup code.")}}});document.addEventListener("keydown",a=>{var i,n,t,l,u;e.activeTab!=="deck"||e.showBackupModal||a.target&&(a.target.tagName==="INPUT"||a.target.tagName==="TEXTAREA")||(a.code==="Space"?(a.preventDefault(),e.deckFlipped=!e.deckFlipped,v()):a.key==="1"?(i=document.querySelector('[data-rating="again"]'))==null||i.click():a.key==="2"?(n=document.querySelector('[data-rating="good"]'))==null||n.click():a.key==="3"?(t=document.querySelector('[data-rating="easy"]'))==null||t.click():a.key==="ArrowRight"?(l=document.querySelector('[data-action="next-anki-card"]'))==null||l.click():a.key==="ArrowLeft"&&((u=document.querySelector('[data-action="prev-anki-card"]'))==null||u.click()))});le(e.level);

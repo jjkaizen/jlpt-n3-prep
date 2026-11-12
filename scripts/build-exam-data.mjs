@@ -87,6 +87,20 @@ for (const lvl of ['n5', 'n4', 'n3', 'n2', 'n1']) {
   }
 }
 
+// Supplement kanjiMap with all 2,136 Joyo Kanji so every Kanji character has an English keyword
+const joyoPath = path.join(DATA_TMP, 'kanji-joyo.json');
+if (fs.existsSync(joyoPath)) {
+  const joyoList = JSON.parse(fs.readFileSync(joyoPath, 'utf8')).kanji || [];
+  for (const jk of joyoList) {
+    if (!kanjiMap.has(jk.character)) {
+      kanjiMap.set(jk.character, {
+        character: jk.character,
+        meanings: jk.meanings?.en || []
+      });
+    }
+  }
+}
+
 // Load JMdict words.json
 const jmdictRaw = JSON.parse(fs.readFileSync(path.join(DATA_TMP, 'words.json'), 'utf8')).words || [];
 for (const entry of jmdictRaw) {
@@ -1152,6 +1166,16 @@ function buildDeckForLevel(level, levelExams, synonymsBank, usagesBank, grammarB
   const seenWords = new Set();
   let cardSeq = 1;
 
+  const buildKanjiDashMeaning = word => {
+    const kChars = [...word].filter(ch => /[\u4e00-\u9faf]/.test(ch));
+    const parts = kChars.map(ch => {
+      const ki = kanjiMap.get(ch);
+      const firstMeaning = ki?.meanings?.[0] || lexicon.get(ch)?.m?.split(';')[0] || ch;
+      return String(firstMeaning).replace(/\s*\(.*?\)\s*/g, '').trim();
+    });
+    return parts.join(' - ');
+  };
+
   const addCard = ({ w, r, m, cat, day, qNum, ja, en, note }) => {
     const cleanW = String(w || '').replace(/^[〜～\s]+/, '').trim();
     // Only include words containing Kanji, and deduplicate strictly on the Kanji word itself
@@ -1162,6 +1186,7 @@ function buildDeckForLevel(level, levelExams, synonymsBank, usagesBank, grammarB
       id: `${level.toLowerCase()}-c${cardSeq++}`,
       w: cleanW,
       r: r || cleanW,
+      km: buildKanjiDashMeaning(cleanW),
       m: m || '',
       cat: cat || 'vocab', // 'kanji' | 'adverb_grammar' | 'vocab'
       day: day || null,

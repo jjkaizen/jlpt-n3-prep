@@ -1644,30 +1644,25 @@ function renderWordDeckScreen() {
             : st === 'reviewing'
             ? 'row-reviewing'
             : '';
-        const readCell = appState.tableMaskReading
-          ? `<span class="masked-cell" data-action="reveal-masked-cell">${esc(c.r)}</span>`
-          : esc(c.r);
-        const meanCell = appState.tableMaskMeaning
-          ? `<span class="masked-cell" data-action="reveal-masked-cell">${esc(c.m)}</span>`
-          : esc(c.m);
         return `
           <tr class="${rowCls}" id="tbl-row-${c.id}">
-            <td>
+            <td class="cell-word">
               <div class="td-word-stack">
                 <span class="td-word-kanji">
                   <a class="jp-word" href="${jpdbUrl(c.w)}" target="_blank" rel="noopener noreferrer">${esc(c.w)}</a>
                 </span>
-                <span class="td-word-reading">${readCell}</span>
+                <span class="td-word-faint-hira" data-action="reveal-masked-cell" title="Tap to darken reading">${esc(c.r)}</span>
               </div>
             </td>
-            <td class="td-meaning-cell">${meanCell}</td>
-            <td style="text-align:right;">
+            <td class="cell-rate">
               <div class="mini-rate-group">
                 <button type="button" class="mini-rate-btn ${isWeak ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-word="${esc(c.w)}" data-status="struggling" title="Red · Weak">🔴</button>
                 <button type="button" class="mini-rate-btn ${st === 'reviewing' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-word="${esc(c.w)}" data-status="reviewing" title="Amber · Good">🟡</button>
                 <button type="button" class="mini-rate-btn ${st === 'mastered' ? 'active' : ''}" data-action="rate-table-row" data-cid="${c.id}" data-word="${esc(c.w)}" data-status="mastered" title="Green · Mastered">🟢</button>
               </div>
             </td>
+            <td class="cell-kparts td-kparts-cell">${esc(c.km || '—')}</td>
+            <td class="cell-meaning td-meaning-cell">${esc(c.m)}</td>
           </tr>
         `;
       })
@@ -1678,13 +1673,10 @@ function renderWordDeckScreen() {
         <table class="deck-compact-table">
           <thead>
             <tr>
-              <th class="col-word" style="cursor:pointer;" data-action="toggle-mask-reading" title="Tap to hide/show readings">
-                漢字 / 読み ${appState.tableMaskReading ? '🙈' : '👁'}
-              </th>
-              <th class="col-meaning" style="cursor:pointer;" data-action="toggle-mask-meaning" title="Tap to hide/show meanings">
-                意味 (${queue.length}) ${appState.tableMaskMeaning ? '🙈' : '👁'}
-              </th>
+              <th class="col-word">漢字 (${queue.length}) · <span style="opacity:0.65; font-weight:600;">Swipe ➔ for Meaning</span></th>
               <th class="col-rate">🔴 🟡 🟢</th>
+              <th class="col-kparts">漢字のパーツ (Kanji Parts)</th>
+              <th class="col-meaning">英語の意味 (Definition)</th>
             </tr>
           </thead>
           <tbody>
