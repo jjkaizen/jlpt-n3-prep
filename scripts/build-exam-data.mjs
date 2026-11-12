@@ -101,7 +101,20 @@ if (fs.existsSync(joyoPath)) {
   }
 }
 
-// Load JMdict words.json
+// Load exact jpdb.io Kanji keywords so Kanji meanings match jpdb.io 100%
+const jpdbKanjiPath = path.join(OUT_DIR, 'jpdb-kanji-keywords.json');
+const jpdbKanjiKeywords = fs.existsSync(jpdbKanjiPath)
+  ? JSON.parse(fs.readFileSync(jpdbKanjiPath, 'utf8'))
+  : {};
+for (const [ch, kw] of Object.entries(jpdbKanjiKeywords)) {
+  const existing = kanjiMap.get(ch);
+  if (existing) {
+    existing.jpdbKeyword = kw;
+    existing.meanings = [kw, ...(existing.meanings || []).filter(x => x !== kw)];
+  } else {
+    kanjiMap.set(ch, { character: ch, jpdbKeyword: kw, meanings: [kw] });
+  }
+}
 const jmdictRaw = JSON.parse(fs.readFileSync(path.join(DATA_TMP, 'words.json'), 'utf8')).words || [];
 for (const entry of jmdictRaw) {
   const glosses = [];
@@ -1169,8 +1182,9 @@ function buildDeckForLevel(level, levelExams, synonymsBank, usagesBank, grammarB
   const buildKanjiDashMeaning = word => {
     const kChars = [...word].filter(ch => /[\u4e00-\u9faf]/.test(ch));
     const parts = kChars.map(ch => {
+      if (jpdbKanjiKeywords[ch]) return jpdbKanjiKeywords[ch];
       const ki = kanjiMap.get(ch);
-      const firstMeaning = ki?.meanings?.[0] || lexicon.get(ch)?.m?.split(';')[0] || ch;
+      const firstMeaning = ki?.jpdbKeyword || ki?.meanings?.[0] || lexicon.get(ch)?.m?.split(';')[0] || ch;
       return String(firstMeaning).replace(/\s*\(.*?\)\s*/g, '').trim();
     });
     return parts.join(' - ');
